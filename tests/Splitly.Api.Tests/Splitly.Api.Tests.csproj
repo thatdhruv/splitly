@@ -25,6 +25,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Splitly.Api\Splitly.Api.csproj" />
     <ProjectReference Include="..\..\src\Splitly.Contracts\Splitly.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Splitly.Receipts\Splitly.Receipts.csproj" />
   </ItemGroup>
 
 </Project>

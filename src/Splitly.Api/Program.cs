@@ -9,6 +9,7 @@ using Splitly.Api.Hubs;
 using Splitly.Api.Services;
 using Splitly.Data;
 using Splitly.Domain;
+using Splitly.Receipts;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -39,7 +40,9 @@ builder.Services.AddScoped<IAuthorizationHandler, GroupMemberHandler>();
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddHttpClient<IExchangeRateProvider, CachedExchangeRateProvider>(c => c.BaseAddress = new Uri("https://api.frankfurter.dev/"));
+builder.Services.AddReceiptStorage(builder.Configuration);
 builder.Services.AddScoped<ExpenseService>();
+builder.Services.AddScoped<ReceiptService>();
 builder.Services.AddScoped<BalanceService>();
 builder.Services.AddScoped<InviteService>();
 builder.Services.AddScoped<GroupNotifier>();

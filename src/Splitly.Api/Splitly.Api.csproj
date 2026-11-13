@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Splitly.Data\Splitly.Data.csproj" />
     <ProjectReference Include="..\Splitly.Contracts\Splitly.Contracts.csproj" />
+    <ProjectReference Include="..\Splitly.Receipts\Splitly.Receipts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

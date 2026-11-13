@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Time.Testing;
 using Splitly.Api.Services;
+using Splitly.Receipts;
 using Splitly.Contracts;
 using Splitly.Domain.Splitting;
 using Testcontainers.MsSql;
@@ -41,15 +42,50 @@ public sealed class FakeRates : IExchangeRateProvider
         Task.FromResult(from == to ? 1m : Table[(from, to)]);
 }
 
+/// <summary>Scriptable parser: tests set <see cref="Result"/> or <see cref="Throw"/> and count calls.</summary>
+public sealed class TestParser : IReceiptParser
+{
+    public ParsedReceipt Result { get; set; } = FakeReceiptParser.Sample;
+    public Func<Exception>? Throw { get; set; }
+    private int _calls;
+    public int Calls => _calls;
+
+    public async Task<ParsedReceipt> ParseAsync(Stream image, string contentType, string? currencyHint, CancellationToken ct)
+    {
+        Interlocked.Increment(ref _calls);
+        await Task.Delay(50, ct); // widen the race window for the concurrency test
+        if (Throw is { } t) throw t();
+        return Result;
+    }
+}
+
 public sealed class ApiFactory(string connectionString) : WebApplicationFactory<Program>
 {
     public FakeTimeProvider Clock { get; } = new(DateTimeOffset.UtcNow);
+    public TestParser Parser { get; } = new();
+    private readonly string _blobDir = Path.Combine(Path.GetTempPath(), "splitly-test-" + Guid.NewGuid().ToString("N"));
+
+    /// <summary>Runs the receipt worker's unit of work in-process until the queue is empty.</summary>
+    public async Task<int> ProcessReceiptsAsync()
+    {
+        var n = 0;
+        while (true)
+        {
+            await using var scope = Services.CreateAsyncScope();
+            if (!await scope.ServiceProvider.GetRequiredService<ReceiptProcessor>().ProcessNextAsync(default)) return n;
+            n++;
+        }
+    }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting("ConnectionStrings:splitly", connectionString);
+        builder.UseSetting("Receipts:LocalPath", _blobDir);
         builder.ConfigureServices(s =>
         {
+            s.AddSingleton<IReceiptParser>(Parser);
+            s.AddSingleton(new ReceiptProcessingOptions());
+            s.AddScoped<ReceiptProcessor>();
             s.RemoveAll<IExchangeRateProvider>();
             s.AddSingleton<IExchangeRateProvider, FakeRates>();
             s.RemoveAll<TimeProvider>();
@@ -111,4 +147,22 @@ public sealed class TestUser
 
     public async Task<BalancesDto> BalancesAsync(Guid groupId) =>
         (await Http.GetFromJsonAsync<BalancesDto>($"/groups/{groupId}/balances"))!;
+
+    public static readonly byte[] TinyPng = Convert.FromBase64String(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==");
+
+    public Task<HttpResponseMessage> UploadReceiptAsync(Guid groupId, byte[]? bytes = null, string fileName = "r.png", string mediaType = "image/png")
+    {
+        var content = new MultipartFormDataContent();
+        var file = new ByteArrayContent(bytes ?? TinyPng);
+        file.Headers.ContentType = new MediaTypeHeaderValue(mediaType);
+        content.Add(file, "file", fileName);
+        return Http.PostAsync($"/groups/{groupId}/receipts", content);
+    }
+
+    public async Task<ReceiptDto> GetReceiptAsync(Guid groupId, Guid receiptId) =>
+        (await Http.GetFromJsonAsync<ReceiptDto>($"/groups/{groupId}/receipts/{receiptId}"))!;
+
+    public Task<HttpResponseMessage> ClaimAsync(Guid groupId, Guid receiptId, Guid itemId, bool claimed = true) =>
+        Http.PutAsJsonAsync($"/groups/{groupId}/receipts/{receiptId}/items/{itemId}/claim", new ClaimRequest(claimed));
 }

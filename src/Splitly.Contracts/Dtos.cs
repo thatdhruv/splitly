@@ -40,3 +40,18 @@ public record SettleUpDto(string Currency, IReadOnlyList<TransferDto> Transfers)
 
 public record PaymentRequest(Guid From, Guid To, decimal Amount);
 public record PaymentDto(Guid Id, Guid From, Guid To, decimal Amount, DateTimeOffset CreatedAt);
+
+// ---- receipts ----
+public record ReceiptItemDto(Guid Id, string Description, decimal Price, double Confidence, bool NeedsReview, IReadOnlyList<Guid> ClaimedBy);
+
+/// <param name="Status">Uploaded, Processing, NeedsReview, Ready, Failed or Finalized.</param>
+public record ReceiptDto(
+    Guid Id, Guid GroupId, string Status, string Currency, string? Merchant, decimal Tax, decimal Tip, decimal? StatedTotal,
+    string? Note, string? FailureReason, Guid? ExpenseId, DateTimeOffset CreatedAt, IReadOnlyList<ReceiptItemDto> Items);
+
+public record ReceiptSummaryDto(Guid Id, string Status, string? Merchant, string Currency, int ItemCount, DateTimeOffset CreatedAt);
+
+public record ItemRequest(string Description, decimal Price);
+public record ReceiptTotalsRequest(decimal Tax, decimal Tip, string? Currency = null);
+public record ClaimRequest(bool Claimed);
+public record FinalizeReceiptRequest(Guid PaidBy, DateOnly Date);

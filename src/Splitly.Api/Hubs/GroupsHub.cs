@@ -32,4 +32,8 @@ public sealed class GroupNotifier(IHubContext<GroupsHub> hub, BalanceService bal
         var dto = await balances.GetBalancesAsync(groupId, ct);
         await hub.Clients.Group(GroupsHub.Channel(groupId)).SendAsync("BalancesChanged", dto, ct);
     }
+
+    /// <summary>Tells viewers that a receipt changed (uploaded, reviewed, claimed or finalized) so they can reload it.</summary>
+    public Task ReceiptChangedAsync(Guid groupId, Guid receiptId, CancellationToken ct = default) =>
+        hub.Clients.Group(GroupsHub.Channel(groupId)).SendAsync("ReceiptChanged", groupId, receiptId, ct);
 }

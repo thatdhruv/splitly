@@ -48,6 +48,7 @@ public static class GroupEndpoints
         g.MapGet("/payments", ListPayments);
 
         MapExpenses(g);
+        g.MapReceipts();
     }
 
     private static async Task<IResult> SignUp(SignUpRequest req, UserManager<AppUser> users)

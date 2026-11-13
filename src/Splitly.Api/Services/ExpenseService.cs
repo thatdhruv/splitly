@@ -12,12 +12,20 @@ public sealed class NotFoundException(string message) : Exception(message);
 
 public sealed class ExpenseService(AppDbContext db, IExchangeRateProvider rates)
 {
-    public async Task<ExpenseDto> CreateAsync(Guid groupId, Guid userId, ExpenseRequest req, CancellationToken ct)
+    /// <param name="receipt">When the expense comes from a receipt, it is marked finalized in the same SaveChanges,
+    /// so the expense and the receipt state change together (or a concurrent finalize gets a 409).</param>
+    public async Task<ExpenseDto> CreateAsync(Guid groupId, Guid userId, ExpenseRequest req, CancellationToken ct, Receipt? receipt = null)
     {
         var expense = new Expense { GroupId = groupId, CreatedBy = userId };
         await ApplyAsync(expense, req, keepRate: false, ct);
+        if (receipt is not null)
+        {
+            expense.ReceiptId = receipt.Id;
+            receipt.Status = ReceiptStatus.Finalized;
+            receipt.ExpenseId = expense.Id;
+        }
         db.Expenses.Add(expense);
-        await db.SaveChangesAsync(ct);
+        await SaveOrConflictAsync(ct);
         return ToDto(expense);
     }
 
