@@ -1,0 +1,59 @@
+@page "/login"
+@inject Splitly.Web.Services.ApiClient Api
+@inject NavigationManager Nav
+
+<PageTitle>Sign in · Splitly</PageTitle>
+
+<section class="card narrow">
+    <h1>@(signUp ? "Create your account" : "Welcome back")</h1>
+
+    <EditForm Model="form" OnValidSubmit="Submit" FormName="auth">
+        @if (signUp)
+        {
+            <label>Name <InputText id="displayName" @bind-Value="form.DisplayName" autocomplete="name" /></label>
+        }
+        <label>Email <InputText id="email" type="email" @bind-Value="form.Email" autocomplete="email" /></label>
+        <label>Password <InputText id="password" type="password" @bind-Value="form.Password" autocomplete="@(signUp ? "new-password" : "current-password")" /></label>
+        @if (signUp) { <p class="hint">At least 10 characters.</p> }
+
+        @if (error is not null) { <p class="error" role="alert">@error</p> }
+
+        <button class="primary" type="submit" disabled="@busy">@(signUp ? "Sign up" : "Sign in")</button>
+    </EditForm>
+
+    <p class="hint">
+        @if (signUp) { <text>Already have an account? </text><button class="link" @onclick="() => signUp = false">Sign in</button> }
+        else { <text>New here? </text><button class="link" id="to-signup" @onclick="() => signUp = true">Create an account</button> }
+    </p>
+</section>
+
+@code {
+    [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
+
+    private readonly AuthForm form = new();
+    private bool signUp, busy;
+    private string? error;
+
+    private async Task Submit()
+    {
+        busy = true; error = null;
+        try
+        {
+            if (signUp) await Api.SignUpAsync(form.Email, form.Password, form.DisplayName);
+            else await Api.LoginAsync(form.Email, form.Password);
+            // Only follow same-site relative return URLs.
+            var target = ReturnUrl is { Length: > 0 } r && !r.Contains("://") && !r.StartsWith("//") ? "/" + r.TrimStart('/') : "/groups";
+            Nav.NavigateTo(target);
+        }
+        catch (Splitly.Web.Services.ApiException ex) { error = ex.Message; }
+        catch (HttpRequestException) { error = "Can't reach the server."; }
+        finally { busy = false; }
+    }
+
+    private sealed class AuthForm
+    {
+        public string DisplayName { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string Password { get; set; } = "";
+    }
+}

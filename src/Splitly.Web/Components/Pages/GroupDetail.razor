@@ -1,0 +1,232 @@
+@page "/groups/{GroupId:guid}"
+@inherits AuthedPage
+@implements IAsyncDisposable
+@using Microsoft.AspNetCore.SignalR.Client
+@using Splitly.Contracts
+@using Splitly.Domain.Splitting
+
+<PageTitle>@(group?.Name ?? "Group") · Splitly</PageTitle>
+
+@if (!Ready)
+{
+    <p class="hint">Loading…</p>
+}
+else if (group is null)
+{
+    <p class="error" role="alert">@(Error ?? "Group not found.")</p>
+    <a href="/groups">Back to your groups</a>
+}
+else
+{
+    <div class="row between">
+        <h1>@group.Name</h1>
+        <span class="pill" title="Live updates">@(live ? "● live" : "○ offline")</span>
+    </div>
+    @if (Error is not null) { <p class="error" role="alert">@Error</p> }
+
+    <div class="grid">
+        <section class="card">
+            <h2>Balances <span class="hint">in @group.BaseCurrency</span></h2>
+            <ul class="list" id="balances">
+                @foreach (var b in balances?.Balances ?? [])
+                {
+                    <li class="row between">
+                        <span>@b.DisplayName</span>
+                        <strong class="@(b.Amount > 0 ? "pos" : b.Amount < 0 ? "neg" : "")" data-user="@b.UserId">
+                            @(b.Amount > 0 ? "is owed " : b.Amount < 0 ? "owes " : "settled ")@(b.Amount == 0 ? "" : Math.Abs(b.Amount).ToString("N" + Decimals))
+                        </strong>
+                    </li>
+                }
+            </ul>
+
+            <h3>Settle up</h3>
+            @if (settle is null || settle.Transfers.Count == 0)
+            {
+                <p class="hint">Everyone is settled up. 🎉</p>
+            }
+            else
+            {
+                <ul class="list" id="settle-up">
+                    @foreach (var t in settle.Transfers)
+                    {
+                        <li class="row between">
+                            <span>@Name(t.From) pays @Name(t.To) <strong>@t.Amount.ToString("N" + Decimals) @settle.Currency</strong></span>
+                            <button class="small" @onclick="() => Pay(t)">Mark paid</button>
+                        </li>
+                    }
+                </ul>
+            }
+
+            <h3>Members</h3>
+            <p class="hint">@string.Join(", ", group.Members.Select(m => m.DisplayName))</p>
+            <button class="small" id="invite" @onclick="CreateInvite">Create invite link</button>
+            @if (inviteUrl is not null)
+            {
+                <p class="hint">Share this link (shown once): <input id="invite-url" readonly value="@inviteUrl" @onfocus="SelectAll" /></p>
+            }
+        </section>
+
+        <section class="card">
+            <h2>Add expense</h2>
+            <EditForm Model="form" OnValidSubmit="AddExpense" FormName="add-expense">
+                <label>Description <InputText id="exp-desc" @bind-Value="form.Description" /></label>
+                <div class="row">
+                    <label>Amount <InputNumber id="exp-amount" @bind-Value="form.Amount" /></label>
+                    <label>Currency <InputText id="exp-currency" @bind-Value="form.Currency" maxlength="3" /></label>
+                    <label>Date <InputDate id="exp-date" @bind-Value="form.Date" /></label>
+                </div>
+                <label>Paid by
+                    <InputSelect id="exp-payer" @bind-Value="form.PaidBy">
+                        @foreach (var m in group.Members) { <option value="@m.UserId">@m.DisplayName</option> }
+                    </InputSelect>
+                </label>
+                <label>Split
+                    <InputSelect id="exp-split" @bind-Value="form.SplitType">
+                        <option value="@SplitType.Equal">Equally</option>
+                        <option value="@SplitType.Exact">Exact amounts</option>
+                        <option value="@SplitType.Percentage">Percentages</option>
+                    </InputSelect>
+                </label>
+
+                <fieldset>
+                    <legend>Between</legend>
+                    @foreach (var m in group.Members)
+                    {
+                        var p = form.Participants[m.UserId];
+                        <div class="row">
+                            <label class="check"><input type="checkbox" @bind="p.Included" /> @m.DisplayName</label>
+                            @if (form.SplitType != SplitType.Equal && p.Included)
+                            {
+                                <input class="num" type="number" step="any" placeholder="@(form.SplitType == SplitType.Exact ? "amount" : "%")" @bind="p.Value" />
+                            }
+                        </div>
+                    }
+                </fieldset>
+
+                <button class="primary" type="submit" id="exp-submit">Add expense</button>
+            </EditForm>
+        </section>
+    </div>
+
+    <section class="card">
+        <h2>Expenses</h2>
+        @if (expenses.Count == 0) { <p class="hint">No expenses yet.</p> }
+        <ul class="list" id="expenses">
+            @foreach (var e in expenses)
+            {
+                <li class="row between">
+                    <span>
+                        <strong>@e.Description</strong>
+                        <span class="hint">@e.Date · @Name(e.PaidBy) paid</span>
+                    </span>
+                    <span>
+                        @e.Amount.ToString("N" + Digits(e.Currency)) @e.Currency
+                        @if (e.Currency != group.BaseCurrency) { <span class="hint">(@@ @e.ExchangeRate → @e.BaseAmount.ToString("N" + Decimals) @group.BaseCurrency)</span> }
+                        <button class="small" @onclick="() => Delete(e)">Delete</button>
+                    </span>
+                </li>
+            }
+        </ul>
+    </section>
+}
+
+@code {
+    [Parameter] public Guid GroupId { get; set; }
+
+    private GroupDto? group;
+    private BalancesDto? balances;
+    private SettleUpDto? settle;
+    private List<ExpenseDto> expenses = [];
+    private ExpenseForm form = new();
+    private string? inviteUrl;
+    private bool live;
+    private HubConnection? hub;
+
+    private int Decimals => Splitly.Domain.Money.Currencies.MinorUnits(group!.BaseCurrency);
+    private static int Digits(string currency) => Splitly.Domain.Money.Currencies.MinorUnits(currency);
+    private string Name(Guid id) => group!.Members.FirstOrDefault(m => m.UserId == id)?.DisplayName ?? "(former member)";
+
+    protected override async Task OnReadyAsync()
+    {
+        try { group = await Api.GetGroupAsync(GroupId); }
+        catch (Splitly.Web.Services.ApiException ex) { Error = ex.Message; return; }
+
+        form = new ExpenseForm { Currency = group.BaseCurrency, PaidBy = Api.Me!.Id };
+        await Reload();
+        await ConnectAsync();
+    }
+
+    private async Task Reload()
+    {
+        // New members may have joined (this is also called after a live update): give them a form row.
+        foreach (var m in group!.Members) form.Participants.TryAdd(m.UserId, new Participant());
+        balances = await Api.GetBalancesAsync(GroupId);
+        settle = await Api.GetSettleUpAsync(GroupId);
+        expenses = await Api.GetExpensesAsync(GroupId);
+    }
+
+    private async Task ConnectAsync()
+    {
+        hub = new HubConnectionBuilder()
+            .WithUrl(new Uri(Api.BaseAddress, "hubs/groups"), o => o.AccessTokenProvider = () => Task.FromResult(Api.Token))
+            .WithAutomaticReconnect()
+            .Build();
+        hub.On<BalancesDto>("BalancesChanged", async dto =>
+        {
+            if (dto.GroupId != GroupId) return;
+            await InvokeAsync(async () =>
+            {
+                // Another member (or another tab) changed something: refresh everything, members included.
+                await Guard(async () => { group = await Api.GetGroupAsync(GroupId); await Reload(); });
+                StateHasChanged();
+            });
+        });
+        hub.Reconnecting += _ => { live = false; return InvokeAsync(StateHasChanged); };
+        hub.Reconnected += async _ => { await hub.InvokeAsync("Join", GroupId); live = true; await InvokeAsync(StateHasChanged); };
+        try
+        {
+            await hub.StartAsync();
+            await hub.InvokeAsync("Join", GroupId);
+            live = true;
+        }
+        catch { live = false; } // the page still works without live push
+    }
+
+    private Task AddExpense() => Guard(async () =>
+    {
+        var parts = form.Participants.Where(p => p.Value.Included)
+            .Select(p => new ParticipantInput(p.Key, form.SplitType == SplitType.Equal ? null : p.Value.Value)).ToList();
+        await Api.AddExpenseAsync(GroupId, new ExpenseRequest(
+            form.Description, form.Amount, form.Currency, DateOnly.FromDateTime(form.Date), form.PaidBy, form.SplitType, parts));
+        form.Description = ""; form.Amount = 0;
+        foreach (var p in form.Participants.Values) p.Value = null;
+        await Reload();
+    });
+
+    private Task Delete(ExpenseDto e) => Guard(async () => { await Api.DeleteExpenseAsync(GroupId, e); await Reload(); });
+    private Task Pay(TransferDto t) => Guard(async () => { await Api.RecordPaymentAsync(GroupId, t); await Reload(); });
+    private Task CreateInvite() => Guard(async () =>
+    {
+        var invite = await Api.CreateInviteAsync(GroupId);
+        inviteUrl = new Uri(Nav.BaseUri) + $"join/{invite.Token}";
+    });
+    private Task SelectAll(FocusEventArgs _) => Task.CompletedTask;
+
+    public async ValueTask DisposeAsync()
+    {
+        if (hub is not null) await hub.DisposeAsync();
+    }
+
+    private sealed class Participant { public bool Included { get; set; } = true; public decimal? Value { get; set; } }
+
+    private sealed class ExpenseForm
+    {
+        public string Description { get; set; } = "";
+        public decimal Amount { get; set; }
+        public string Currency { get; set; } = "USD";
+        public DateTime Date { get; set; } = DateTime.Today;
+        public Guid PaidBy { get; set; }
+        public SplitType SplitType { get; set; }
+        public Dictionary<Guid, Participant> Participants { get; } = [];
+    }
+}

@@ -1,0 +1,33 @@
+@page "/join/{Token}"
+@inherits AuthedPage
+
+<PageTitle>Join group · Splitly</PageTitle>
+
+<section class="card narrow">
+    @if (!Ready) { <p class="hint">Checking your invite…</p> }
+    else if (Error is not null)
+    {
+        <h1>Invite problem</h1>
+        <p class="error" role="alert">@Error</p>
+        <a href="/groups">Back to your groups</a>
+    }
+    else
+    {
+        <h1>Join “@preview!.GroupName”?</h1>
+        <p class="hint">This link expires @preview.ExpiresAt.LocalDateTime.ToString("g").</p>
+        <button class="primary" id="accept-invite" @onclick="Accept">Join group</button>
+    }
+</section>
+
+@code {
+    [Parameter] public string Token { get; set; } = "";
+    private Splitly.Contracts.InvitePreviewDto? preview;
+
+    protected override async Task OnReadyAsync() => preview = await Api.PreviewInviteAsync(Token);
+
+    private Task Accept() => Guard(async () =>
+    {
+        var groupId = await Api.AcceptInviteAsync(Token);
+        Nav.NavigateTo($"/groups/{groupId}");
+    });
+}

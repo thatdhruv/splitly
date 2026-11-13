@@ -4,9 +4,11 @@
     <Project Path="src/Splitly.Contracts/Splitly.Contracts.csproj" />
     <Project Path="src/Splitly.Data/Splitly.Data.csproj" />
     <Project Path="src/Splitly.Domain/Splitly.Domain.csproj" />
+    <Project Path="src/Splitly.Web/Splitly.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Splitly.Api.Tests/Splitly.Api.Tests.csproj" />
     <Project Path="tests/Splitly.Domain.Tests/Splitly.Domain.Tests.csproj" />
+    <Project Path="tests/Splitly.E2E.Tests/Splitly.E2E.Tests.csproj" />
   </Folder>
 </Solution>

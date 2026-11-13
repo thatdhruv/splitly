@@ -1,0 +1,54 @@
+@page "/groups"
+@inherits AuthedPage
+
+<PageTitle>Your groups · Splitly</PageTitle>
+
+<h1>Your groups</h1>
+
+@if (!Ready)
+{
+    <p class="hint">Loading…</p>
+}
+else
+{
+    @if (Error is not null) { <p class="error" role="alert">@Error</p> }
+
+    @if (groups.Count == 0)
+    {
+        <p class="hint">You're not in any groups yet. Create one below, or open an invite link a friend sent you.</p>
+    }
+    <ul class="list" id="group-list">
+        @foreach (var g in groups)
+        {
+            <li><a href="/groups/@g.Id"><strong>@g.Name</strong><span class="hint">@g.MemberCount member@(g.MemberCount == 1 ? "" : "s") · @g.BaseCurrency</span></a></li>
+        }
+    </ul>
+
+    <section class="card">
+        <h2>New group</h2>
+        <EditForm Model="form" OnValidSubmit="Create" FormName="new-group">
+            <label>Name <InputText id="group-name" @bind-Value="form.Name" /></label>
+            <label>Currency <InputText id="group-currency" @bind-Value="form.Currency" maxlength="3" /></label>
+            <button class="primary" type="submit">Create group</button>
+        </EditForm>
+    </section>
+}
+
+@code {
+    private List<Splitly.Contracts.GroupSummaryDto> groups = [];
+    private readonly NewGroup form = new();
+
+    protected override async Task OnReadyAsync() => groups = await Api.GetGroupsAsync();
+
+    private Task Create() => Guard(async () =>
+    {
+        var g = await Api.CreateGroupAsync(form.Name, form.Currency);
+        Nav.NavigateTo($"/groups/{g.Id}");
+    });
+
+    private sealed class NewGroup
+    {
+        public string Name { get; set; } = "";
+        public string Currency { get; set; } = "USD";
+    }
+}
