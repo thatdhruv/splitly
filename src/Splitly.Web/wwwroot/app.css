@@ -38,3 +38,7 @@ button:disabled { opacity: .6; cursor: default; }
 .pill { font-size: .8rem; color: var(--muted); border: 1px solid var(--line); border-radius: 99px; padding: .1rem .6rem; }
 #blazor-error-ui { display: none; position: fixed; bottom: 0; left: 0; right: 0; padding: .6rem 1rem; background: #fffbe6; color: #333; z-index: 1000; }
 #blazor-error-ui .dismiss { cursor: pointer; float: right; }
+.flagged { background: color-mix(in srgb, #f59e0b 14%, transparent); border-radius: 8px; padding-left: .5rem !important; padding-right: .5rem !important; }
+.status { font-weight: 600; }
+.receipt-img { max-width: 100%; border-radius: 8px; border: 1px solid var(--line); }
+input[type=file] { padding: .4rem; }

@@ -1,0 +1,245 @@
+@page "/groups/{GroupId:guid}/receipts/{ReceiptId:guid}"
+@inherits AuthedPage
+@implements IAsyncDisposable
+@using Microsoft.AspNetCore.SignalR.Client
+@using Splitly.Contracts
+@using Splitly.Domain
+@using Splitly.Domain.Splitting
+
+<PageTitle>@(receipt?.Merchant ?? "Receipt") · Splitly</PageTitle>
+
+<p><a href="/groups/@GroupId">← Back to group</a></p>
+
+@if (!Ready)
+{
+    <p class="hint">Loading…</p>
+}
+else if (receipt is null || group is null)
+{
+    <p class="error" role="alert">@(Error ?? "Receipt not found.")</p>
+}
+else
+{
+    <h1>@(receipt.Merchant ?? "Receipt")</h1>
+    @if (Error is not null) { <p class="error" role="alert">@Error</p> }
+
+    <p class="status" id="receipt-status" data-status="@receipt.Status">
+        @switch (receipt.Status)
+        {
+            case "Uploaded": case "Processing": <text>⏳ Reading your receipt…</text> break;
+            case "NeedsReview": <text>⚠️ Please check the highlighted lines before splitting.</text> break;
+            case "Ready": <text>✅ Everyone can claim their items now.</text> break;
+            case "Failed": <text>❌ @receipt.FailureReason</text> break;
+            case "Finalized": <text>🧾 Added to the group's expenses.</text> break;
+        }
+    </p>
+    @if (receipt.Status == "Failed") { <button class="primary" @onclick="Retry">Try again</button> }
+    @if (receipt.Note is not null) { <p class="error" id="receipt-note">@receipt.Note <button class="small" @onclick="Accept">Accept as it is</button></p> }
+
+    @if (receipt.Items.Count > 0 || editable)
+    {
+        <section class="card">
+            <h2>Items <span class="hint">in @receipt.Currency</span></h2>
+            <ul class="list" id="receipt-items">
+                @foreach (var item in receipt.Items)
+                {
+                    var mine = item.ClaimedBy.Contains(Api.Me!.Id);
+                    <li class="@(item.NeedsReview ? "flagged" : "")" data-item="@item.Description">
+                        @if (item.NeedsReview && editable)
+                        {
+                            var draft = Draft(item);
+                            <div class="row">
+                                <input aria-label="Description" @bind="draft.Description" />
+                                <input class="num" aria-label="Price" type="number" step="any" @bind="draft.Price" />
+                                <button class="small primary" @onclick="() => Confirm(item, draft)">Looks right</button>
+                                <button class="small" @onclick="() => Remove(item)">Remove</button>
+                            </div>
+                            <span class="hint">Low confidence (@((item.Confidence * 100).ToString("0"))%): double-check the name and price.</span>
+                        }
+                        else
+                        {
+                            <div class="row between">
+                                <span>
+                                    <strong>@item.Description</strong> <span>@item.Price.ToString("N" + digits)</span>
+                                    <span class="hint">@(item.ClaimedBy.Count == 0 ? "nobody yet" : string.Join(", ", item.ClaimedBy.Select(Name)))</span>
+                                </span>
+                                <span class="row">
+                                    @if (editable)
+                                    {
+                                        <label class="check"><input type="checkbox" checked="@mine" @onchange="e => Claim(item, (bool)e.Value!)" /> Mine</label>
+                                        <button class="small" aria-label="Remove @item.Description" @onclick="() => Remove(item)">✕</button>
+                                    }
+                                </span>
+                            </div>
+                        }
+                    </li>
+                }
+            </ul>
+
+            @if (editable)
+            {
+                <h3>Add a missing item</h3>
+                <div class="row">
+                    <input placeholder="Description" @bind="newItem.Description" />
+                    <input class="num" placeholder="Price" type="number" step="any" @bind="newItem.Price" />
+                    <button class="small" @onclick="AddItem">Add</button>
+                </div>
+
+                <h3>Tax &amp; tip <span class="hint">split in proportion to what each person claimed</span></h3>
+                <div class="row">
+                    <label>Tax <input class="num" type="number" step="any" @bind="tax" /></label>
+                    <label>Tip <input class="num" type="number" step="any" @bind="tip" /></label>
+                    <button class="small" @onclick="SaveTotals">Save</button>
+                </div>
+            }
+        </section>
+
+        <section class="card">
+            <h2>Image</h2>
+            @if (imageUrl is null) { <button class="small" @onclick="ShowImage">Show the photo</button> }
+            else { <img class="receipt-img" src="@imageUrl" alt="Uploaded receipt" /> }
+        </section>
+    }
+
+    @if (preview is not null)
+    {
+        <section class="card">
+            <h2>Who owes what</h2>
+            <ul class="list" id="receipt-preview">
+                @foreach (var s in preview.Shares)
+                {
+                    <li class="row between"><span>@Name(s.UserId)</span><strong>@s.Amount.ToString("N" + digits) @receipt.Currency</strong></li>
+                }
+                <li class="row between"><span>Total</span><strong>@preview.Total.ToString("N" + digits) @receipt.Currency</strong></li>
+            </ul>
+        </section>
+    }
+    else if (previewProblem is not null && receipt.Status is "Ready" or "NeedsReview")
+    {
+        <p class="hint" id="receipt-preview-problem">@previewProblem</p>
+    }
+
+    @if (receipt.Status == "Ready")
+    {
+        <section class="card">
+            <h2>Add to group</h2>
+            <div class="row">
+                <label>Paid by
+                    <select id="receipt-payer" @bind="paidBy">
+                        @foreach (var m in group.Members) { <option value="@m.UserId">@m.DisplayName</option> }
+                    </select>
+                </label>
+                <label>Date <input id="receipt-date" type="date" @bind="date" /></label>
+            </div>
+            <button class="primary" id="finalize" disabled="@(preview is null)" @onclick="Finalize">Add expense</button>
+        </section>
+    }
+}
+
+@code {
+    [Parameter] public Guid GroupId { get; set; }
+    [Parameter] public Guid ReceiptId { get; set; }
+
+    private GroupDto? group;
+    private ReceiptDto? receipt;
+    private ReceiptSplitResult? preview;
+    private string? previewProblem, imageUrl;
+    private decimal tax, tip;
+    private Guid paidBy;
+    private DateTime date = DateTime.Today;
+    private int digits = 2;
+    private readonly Dictionary<Guid, ItemDraft> drafts = [];
+    private readonly ItemDraft newItem = new();
+    private HubConnection? hub;
+    private CancellationTokenSource cts = new();
+
+    private bool editable => receipt?.Status is "NeedsReview" or "Ready";
+    private string Name(Guid id) => group!.Members.FirstOrDefault(m => m.UserId == id)?.DisplayName ?? "(former member)";
+    private ItemDraft Draft(ReceiptItemDto i) =>
+        drafts.TryGetValue(i.Id, out var d) ? d : drafts[i.Id] = new ItemDraft { Description = i.Description, Price = i.Price };
+
+    protected override async Task OnReadyAsync()
+    {
+        try { group = await Api.GetGroupAsync(GroupId); receipt = await Api.GetReceiptAsync(GroupId, ReceiptId); }
+        catch (Splitly.Web.Services.ApiException ex) { Error = ex.Message; return; }
+        paidBy = Api.Me!.Id;
+        Refresh();
+        await ConnectAsync();
+        _ = PollWhileProcessingAsync(cts.Token); // the worker is a separate process and can't push, so poll until it's done
+    }
+
+    private void Refresh()
+    {
+        digits = Splitly.Domain.Money.Currencies.MinorUnits(receipt!.Currency);
+        tax = receipt.Tax; tip = receipt.Tip;
+        preview = null; previewProblem = null;
+        if (receipt.Items.Count == 0) return;
+        try
+        {
+            preview = ReceiptSplitter.Split(receipt.Currency,
+                receipt.Items.Select(i => new ClaimedItem(i.Id, i.Price, i.ClaimedBy)).ToList(), receipt.Tax, receipt.Tip);
+        }
+        catch (DomainValidationException ex) { previewProblem = ex.Message; }
+    }
+
+    private async Task PollWhileProcessingAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+            while (receipt is { Status: "Uploaded" or "Processing" } && await timer.WaitForNextTickAsync(ct))
+                await InvokeAsync(async () => { await Guard(Reload); StateHasChanged(); });
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private async Task Reload() { receipt = await Api.GetReceiptAsync(GroupId, ReceiptId); drafts.Clear(); Refresh(); }
+
+    private async Task ConnectAsync()
+    {
+        hub = new HubConnectionBuilder()
+            .WithUrl(new Uri(Api.BaseAddress, "hubs/groups"), o => o.AccessTokenProvider = () => Task.FromResult(Api.Token))
+            .WithAutomaticReconnect().Build();
+        // Someone else claimed, edited or finalized: show it without a refresh.
+        hub.On<Guid, Guid>("ReceiptChanged", async (g, r) =>
+        {
+            if (g != GroupId || r != ReceiptId) return;
+            await InvokeAsync(async () => { await Guard(Reload); StateHasChanged(); });
+        });
+        try { await hub.StartAsync(); await hub.InvokeAsync("Join", GroupId); }
+        catch { /* live updates are a bonus; the page works without them */ }
+    }
+
+    private Task Apply(Func<Task<ReceiptDto>> action) => Guard(async () => { receipt = await action(); drafts.Clear(); Refresh(); });
+
+    private Task Claim(ReceiptItemDto i, bool on) => Apply(() => Api.ClaimItemAsync(GroupId, ReceiptId, i.Id, on));
+    private Task Confirm(ReceiptItemDto i, ItemDraft d) => Apply(() => Api.EditItemAsync(GroupId, ReceiptId, i.Id, new ItemRequest(d.Description, d.Price)));
+    private Task Remove(ReceiptItemDto i) => Apply(() => Api.DeleteItemAsync(GroupId, ReceiptId, i.Id));
+    private Task Accept() => Apply(() => Api.AcceptReceiptAsync(GroupId, ReceiptId));
+    private Task SaveTotals() => Apply(() => Api.SetTotalsAsync(GroupId, ReceiptId, new ReceiptTotalsRequest(tax, tip)));
+    private Task AddItem() => Apply(async () =>
+    {
+        var r = await Api.AddItemAsync(GroupId, ReceiptId, new ItemRequest(newItem.Description, newItem.Price));
+        newItem.Description = ""; newItem.Price = 0;
+        return r;
+    });
+    private async Task Retry()
+    {
+        await Apply(() => Api.RetryReceiptAsync(GroupId, ReceiptId));
+        _ = PollWhileProcessingAsync(cts.Token);
+    }
+    private Task ShowImage() => Guard(async () => imageUrl = await Api.GetReceiptImageDataUrlAsync(GroupId, ReceiptId));
+    private Task Finalize() => Guard(async () =>
+    {
+        await Api.FinalizeReceiptAsync(GroupId, ReceiptId, new FinalizeReceiptRequest(paidBy, DateOnly.FromDateTime(date)));
+        Nav.NavigateTo($"/groups/{GroupId}");
+    });
+
+    public async ValueTask DisposeAsync()
+    {
+        await cts.CancelAsync();
+        if (hub is not null) await hub.DisposeAsync();
+    }
+
+    private sealed class ItemDraft { public string Description { get; set; } = ""; public decimal Price { get; set; } }
+}

@@ -89,6 +89,47 @@ public sealed class ApiClient(HttpClient http, ProtectedSessionStorage storage)
     public async Task RecordPaymentAsync(Guid groupId, TransferDto t) =>
         await EnsureOk(await http.PostAsJsonAsync($"groups/{groupId}/payments", new PaymentRequest(t.From, t.To, t.Amount)));
 
+    // ---- receipts ----
+    public async Task<ReceiptDto> UploadReceiptAsync(Guid groupId, Stream file, string fileName, string contentType)
+    {
+        using var content = new MultipartFormDataContent();
+        var part = new StreamContent(file);
+        part.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+        content.Add(part, "file", fileName);
+        var res = await http.PostAsync($"groups/{groupId}/receipts", content);
+        await EnsureOk(res);
+        return (await res.Content.ReadFromJsonAsync<ReceiptDto>())!;
+    }
+
+    public Task<List<ReceiptSummaryDto>> GetReceiptsAsync(Guid groupId) => GetAsync<List<ReceiptSummaryDto>>($"groups/{groupId}/receipts");
+    public Task<ReceiptDto> GetReceiptAsync(Guid groupId, Guid id) => GetAsync<ReceiptDto>($"groups/{groupId}/receipts/{id}");
+    public Task<ReceiptDto> EditItemAsync(Guid groupId, Guid id, Guid itemId, ItemRequest req) => SendAsync<ReceiptDto>(HttpMethod.Put, $"groups/{groupId}/receipts/{id}/items/{itemId}", req);
+    public Task<ReceiptDto> AddItemAsync(Guid groupId, Guid id, ItemRequest req) => PostAsync<ReceiptDto>($"groups/{groupId}/receipts/{id}/items", req);
+    public Task<ReceiptDto> DeleteItemAsync(Guid groupId, Guid id, Guid itemId) => SendAsync<ReceiptDto>(HttpMethod.Delete, $"groups/{groupId}/receipts/{id}/items/{itemId}", null);
+    public Task<ReceiptDto> SetTotalsAsync(Guid groupId, Guid id, ReceiptTotalsRequest req) => SendAsync<ReceiptDto>(HttpMethod.Put, $"groups/{groupId}/receipts/{id}", req);
+    public Task<ReceiptDto> AcceptReceiptAsync(Guid groupId, Guid id) => SendAsync<ReceiptDto>(HttpMethod.Post, $"groups/{groupId}/receipts/{id}/accept", null);
+    public Task<ReceiptDto> RetryReceiptAsync(Guid groupId, Guid id) => SendAsync<ReceiptDto>(HttpMethod.Post, $"groups/{groupId}/receipts/{id}/retry", null);
+    public Task<ReceiptDto> ClaimItemAsync(Guid groupId, Guid id, Guid itemId, bool claimed) => SendAsync<ReceiptDto>(HttpMethod.Put, $"groups/{groupId}/receipts/{id}/items/{itemId}/claim", new ClaimRequest(claimed));
+    public Task<ExpenseDto> FinalizeReceiptAsync(Guid groupId, Guid id, FinalizeReceiptRequest req) => PostAsync<ExpenseDto>($"groups/{groupId}/receipts/{id}/finalize", req);
+
+    /// <summary>The image endpoint needs the bearer token, so the page can't use a plain img src; it embeds a data URL instead.</summary>
+    public async Task<string> GetReceiptImageDataUrlAsync(Guid groupId, Guid id)
+    {
+        var res = await http.GetAsync($"groups/{groupId}/receipts/{id}/image");
+        await EnsureOk(res);
+        var type = res.Content.Headers.ContentType?.MediaType ?? "image/jpeg";
+        return $"data:{type};base64,{Convert.ToBase64String(await res.Content.ReadAsByteArrayAsync())}";
+    }
+
+    private async Task<T> SendAsync<T>(HttpMethod method, string url, object? body)
+    {
+        using var req = new HttpRequestMessage(method, url);
+        if (body is not null) req.Content = JsonContent.Create(body);
+        var res = await http.SendAsync(req);
+        await EnsureOk(res);
+        return (await res.Content.ReadFromJsonAsync<T>())!;
+    }
+
     private async Task<T> GetAsync<T>(string url)
     {
         var res = await http.GetAsync(url);

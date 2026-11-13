@@ -109,6 +109,23 @@ else
     </div>
 
     <section class="card">
+        <h2>Receipts</h2>
+        <label>Upload a receipt photo <span class="hint">JPEG, PNG or WebP, up to 5 MB</span>
+            <InputFile id="receipt-file" OnChange="UploadReceipt" accept="image/jpeg,image/png,image/webp" />
+        </label>
+        @if (receipts.Count == 0) { <p class="hint">No receipts yet.</p> }
+        <ul class="list" id="receipts">
+            @foreach (var r in receipts)
+            {
+                <li><a href="/groups/@GroupId/receipts/@r.Id">
+                    <strong>@(r.Merchant ?? "Receipt")</strong>
+                    <span class="hint">@r.Status · @r.ItemCount item@(r.ItemCount == 1 ? "" : "s") · @r.CreatedAt.LocalDateTime.ToString("g")</span>
+                </a></li>
+            }
+        </ul>
+    </section>
+
+    <section class="card">
         <h2>Expenses</h2>
         @if (expenses.Count == 0) { <p class="hint">No expenses yet.</p> }
         <ul class="list" id="expenses">
@@ -137,6 +154,7 @@ else
     private BalancesDto? balances;
     private SettleUpDto? settle;
     private List<ExpenseDto> expenses = [];
+    private List<ReceiptSummaryDto> receipts = [];
     private ExpenseForm form = new();
     private string? inviteUrl;
     private bool live;
@@ -163,6 +181,7 @@ else
         balances = await Api.GetBalancesAsync(GroupId);
         settle = await Api.GetSettleUpAsync(GroupId);
         expenses = await Api.GetExpensesAsync(GroupId);
+        receipts = await Api.GetReceiptsAsync(GroupId);
     }
 
     private async Task ConnectAsync()
@@ -180,6 +199,11 @@ else
                 await Guard(async () => { group = await Api.GetGroupAsync(GroupId); await Reload(); });
                 StateHasChanged();
             });
+        });
+        hub.On<Guid, Guid>("ReceiptChanged", async (g, _) =>
+        {
+            if (g != GroupId) return;
+            await InvokeAsync(async () => { await Guard(async () => receipts = await Api.GetReceiptsAsync(GroupId)); StateHasChanged(); });
         });
         hub.Reconnecting += _ => { live = false; return InvokeAsync(StateHasChanged); };
         hub.Reconnected += async _ => { await hub.InvokeAsync("Join", GroupId); live = true; await InvokeAsync(StateHasChanged); };
@@ -201,6 +225,14 @@ else
         form.Description = ""; form.Amount = 0;
         foreach (var p in form.Participants.Values) p.Value = null;
         await Reload();
+    });
+
+    private Task UploadReceipt(InputFileChangeEventArgs e) => Guard(async () =>
+    {
+        var file = e.File;
+        await using var stream = file.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024);
+        var receipt = await Api.UploadReceiptAsync(GroupId, stream, file.Name, file.ContentType);
+        Nav.NavigateTo($"/groups/{GroupId}/receipts/{receipt.Id}");
     });
 
     private Task Delete(ExpenseDto e) => Guard(async () => { await Api.DeleteExpenseAsync(GroupId, e); await Reload(); });
