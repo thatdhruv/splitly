@@ -25,6 +25,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
 
         b.Entity<AppUser>().Property(u => u.DisplayName).HasMaxLength(100);
 
+        // Ids are assigned in code (Guid v7). Without this, EF treats a child that already has a key, when it is added
+        // through a navigation, as an existing row and issues an UPDATE instead of an INSERT.
+        b.Entity<Group>().Property(x => x.Id).ValueGeneratedNever();
+        b.Entity<GroupInvite>().Property(x => x.Id).ValueGeneratedNever();
+        b.Entity<Expense>().Property(x => x.Id).ValueGeneratedNever();
+        b.Entity<Payment>().Property(x => x.Id).ValueGeneratedNever();
+        b.Entity<Receipt>().Property(x => x.Id).ValueGeneratedNever();
+        b.Entity<ReceiptItem>().Property(x => x.Id).ValueGeneratedNever();
+        b.Entity<RecurringExpense>().Property(x => x.Id).ValueGeneratedNever();
+
         b.Entity<Group>(e =>
         {
             e.Property(x => x.Name).HasMaxLength(100).IsRequired();
@@ -81,6 +91,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.Property(x => x.Currency).HasMaxLength(3).IsFixedLength();
             e.Property(x => x.Tax).HasPrecision(19, 4);
             e.Property(x => x.Tip).HasPrecision(19, 4);
+            e.Property(x => x.StatedTotal).HasPrecision(19, 4);
+            e.Property(x => x.Merchant).HasMaxLength(200);
+            e.Property(x => x.Note).HasMaxLength(500);
+            e.Property(x => x.FailureReason).HasMaxLength(500);
             e.Property(x => x.RowVersion).IsRowVersion();
             e.HasOne<Group>().WithMany().HasForeignKey(x => x.GroupId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.Items).WithOne().HasForeignKey(i => i.ReceiptId).OnDelete(DeleteBehavior.Cascade);

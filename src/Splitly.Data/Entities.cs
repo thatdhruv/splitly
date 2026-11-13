@@ -100,6 +100,14 @@ public class Receipt
     public string ContentType { get; set; } = "image/jpeg";
     public ReceiptStatus Status { get; set; }
     public string? FailureReason { get; set; }
+    /// <summary>Why the parser asked for review (e.g. items don't add up to the printed total). Cleared when a member edits the receipt.</summary>
+    public string? Note { get; set; }
+    public string? Merchant { get; set; }
+    /// <summary>The grand total printed on the receipt, if the parser found one; used to sanity-check the items.</summary>
+    public decimal? StatedTotal { get; set; }
+    public int Attempts { get; set; }
+    public DateTimeOffset? ProcessingStartedAt { get; set; }
+    public Guid? ExpenseId { get; set; }
     public string Currency { get; set; } = "USD";
     public decimal Tax { get; set; }
     public decimal Tip { get; set; }
