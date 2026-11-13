@@ -70,7 +70,54 @@ public class SplitFlowTests(StackFixture stack)
         await Expect(alice.Locator("#balances")).Not.ToContainTextAsync("is owed");
     }
 
+    [Fact]
+    public async Task Receipt_is_parsed_flagged_reviewed_claimed_and_turned_into_an_expense()
+    {
+        await using var ctx = await stack.Browser.NewContextAsync();
+        var page = await ctx.NewPageAsync();
+        
+
+        await SignUpAsync(page, "Alice", "/login");
+        await Fill(page, "#group-name", "Dinner club");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Create group" }).ClickAsync();
+        await Expect(page.Locator("h1")).ToHaveTextAsync("Dinner club");
+
+        // Upload a photo; the background worker picks it up and parses it.
+        await page.Locator("#receipt-file").SetInputFilesAsync(new FilePayload
+        {
+            Name = "receipt.png", MimeType = "image/png", Buffer = TinyPng,
+        });
+        await Expect(page).ToHaveURLAsync(new System.Text.RegularExpressions.Regex("/receipts/"));
+        await Expect(page.Locator("#receipt-status")).ToHaveAttributeAsync("data-status", "NeedsReview",
+            new() { Timeout = 30_000 });
+
+        // The low-confidence line is highlighted; fix it up and confirm.
+        var flagged = page.Locator("[data-item='Smudged line']");
+        await Expect(flagged).ToBeVisibleAsync();
+        await flagged.Locator("input[aria-label=Description]").FillAsync("Cheesecake");
+        await flagged.Locator("input[aria-label=Description]").PressAsync("Tab");
+        await flagged.GetByRole(AriaRole.Button, new() { Name = "Looks right" }).ClickAsync();
+        await Expect(page.Locator("#receipt-status")).ToHaveAttributeAsync("data-status", "Ready");
+
+        // Claim every item (Alice is the only member), then check the preview and add the expense.
+        foreach (var item in new[] { "Burger", "Garden salad", "Cheesecake" })
+        {
+            var box = page.Locator($"[data-item='{item}'] input[type=checkbox]");
+            await box.CheckAsync();
+            await Expect(box).ToBeCheckedAsync();
+        }
+        await Expect(page.Locator("#receipt-preview")).ToContainTextAsync("33.05 USD");
+        await page.Locator("#finalize").ClickAsync();
+
+        await Expect(page.Locator("h1")).ToHaveTextAsync("Dinner club");
+        await Expect(page.Locator("#expenses")).ToContainTextAsync("Corner Bistro");
+        await Expect(page.Locator("#expenses")).ToContainTextAsync("33.05 USD");
+    }
+
     // ---- helpers ----
+
+    private static readonly byte[] TinyPng = Convert.FromBase64String(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==");
 
     private async Task SignUpAsync(IPage page, string name, string path)
     {

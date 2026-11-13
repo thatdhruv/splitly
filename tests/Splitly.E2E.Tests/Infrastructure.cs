@@ -14,6 +14,7 @@ public sealed class StackFixture : IAsyncLifetime
 {
     private readonly MsSqlContainer _sql = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest").Build();
     private readonly List<Process> _procs = [];
+    private string _blobDir = "";
 
     public string WebUrl { get; private set; } = "";
     public IPlaywright Playwright { get; private set; } = default!;
@@ -28,13 +29,22 @@ public sealed class StackFixture : IAsyncLifetime
         var apiUrl = $"http://127.0.0.1:{apiPort}";
         WebUrl = $"http://127.0.0.1:{webPort}";
 
+        // The API (stores uploads) and the worker (reads them) must share a blob location; "fake" parser = no API key needed.
+        _blobDir = Path.Combine(Path.GetTempPath(), "splitly-e2e-" + Guid.NewGuid().ToString("N"));
         Start(root, "src/Splitly.Api", apiUrl, new()
         {
             ["ConnectionStrings__splitly"] = _sql.GetConnectionString(),
             ["Database__MigrateOnStartup"] = "true",
+            ["Receipts__LocalPath"] = _blobDir,
         });
         Start(root, "src/Splitly.Web", WebUrl, new() { ["Api__BaseUrl"] = apiUrl });
-        await WaitForAsync($"{apiUrl}/health");
+        await WaitForAsync($"{apiUrl}/health"); // the API applies migrations on start, so the worker waits for it
+        Start(root, "src/Splitly.Worker", null, new()
+        {
+            ["ConnectionStrings__splitly"] = _sql.GetConnectionString(),
+            ["Receipts__LocalPath"] = _blobDir,
+            ["Receipts__Parser"] = "fake",
+        });
         await WaitForAsync($"{WebUrl}/health");
 
         Playwright = await Microsoft.Playwright.Playwright.CreateAsync();
@@ -49,14 +59,14 @@ public sealed class StackFixture : IAsyncLifetime
         await _sql.DisposeAsync();
     }
 
-    private void Start(string root, string project, string url, Dictionary<string, string> env)
+    private void Start(string root, string project, string? url, Dictionary<string, string> env)
     {
 #if DEBUG
         const string config = "Debug";
 #else
         const string config = "Release";
 #endif
-        var psi = new ProcessStartInfo("dotnet", $"run --no-build -c {config} --project {project} --urls {url}")
+        var psi = new ProcessStartInfo("dotnet", $"run --no-build -c {config} --project {project}" + (url is null ? "" : $" --urls {url}"))
         {
             WorkingDirectory = root, RedirectStandardOutput = true, RedirectStandardError = true,
         };
