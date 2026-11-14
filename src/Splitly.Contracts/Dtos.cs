@@ -64,3 +64,9 @@ public record RecurringRequest(
 public record RecurringDto(
     Guid Id, Guid GroupId, string Description, decimal Amount, string Currency, Guid PaidBy, SplitType SplitType,
     IReadOnlyList<ParticipantInput> Participants, Recurrence Recurrence, DateOnly StartDate, DateOnly NextRunDate, DateOnly? EndDate, bool IsActive);
+
+// ---- passkeys ----
+public record PasskeySignUpRequest(string Email, string DisplayName);
+/// <summary>The JSON the browser's WebAuthn API produced (navigator.credentials.create/get), passed through untouched.</summary>
+public record PasskeyCredentialRequest(string CredentialJson, string? Name = null);
+public record PasskeyDto(string Id, string Name, DateTimeOffset CreatedAt);

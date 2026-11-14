@@ -23,9 +23,11 @@ builder.Services.AddIdentityApiEndpoints<AppUser>(o =>
         o.Password.RequiredLength = 10;
         o.Password.RequireNonAlphanumeric = false;
         o.User.RequireUniqueEmail = true;
+        o.Stores.SchemaVersion = IdentitySchemaVersions.Version3; // adds the passkey credential table
     })
     .AddEntityFrameworkStores<AppDbContext>();
 builder.Services.AddSingleton<IEmailSender<AppUser>, NoOpEmailSender>();
+builder.Services.Configure<IdentityPasskeyOptions>(o => PasskeyConfig.Apply(o, builder.Configuration));
 
 // SignalR browsers can't set headers on WebSocket upgrades, so accept the bearer token from the query string for hub URLs only.
 builder.Services.Configure<Microsoft.AspNetCore.Authentication.BearerToken.BearerTokenOptions>(
@@ -77,6 +79,7 @@ app.UseAuthorization();
 
 app.MapGroup("/auth").MapIdentityApi<AppUser>();
 app.MapSplitlyApi();
+app.MapPasskeys();
 app.MapHub<GroupsHub>("/hubs/groups");
 app.MapGet("/health", () => Results.Ok("healthy")).AllowAnonymous();
 

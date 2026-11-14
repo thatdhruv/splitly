@@ -39,7 +39,7 @@ namespace Splitly.Data.Migrations
                     PasswordHash = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     SecurityStamp = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     ConcurrencyStamp = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    PhoneNumber = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    PhoneNumber = table.Column<string>(type: "nvarchar(256)", maxLength: 256, nullable: true),
                     PhoneNumberConfirmed = table.Column<bool>(type: "bit", nullable: false),
                     TwoFactorEnabled = table.Column<bool>(type: "bit", nullable: false),
                     LockoutEnd = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
@@ -125,8 +125,8 @@ namespace Splitly.Data.Migrations
                 name: "AspNetUserLogins",
                 columns: table => new
                 {
-                    LoginProvider = table.Column<string>(type: "nvarchar(450)", nullable: false),
-                    ProviderKey = table.Column<string>(type: "nvarchar(450)", nullable: false),
+                    LoginProvider = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
+                    ProviderKey = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
                     ProviderDisplayName = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     UserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false)
                 },
@@ -135,6 +135,25 @@ namespace Splitly.Data.Migrations
                     table.PrimaryKey("PK_AspNetUserLogins", x => new { x.LoginProvider, x.ProviderKey });
                     table.ForeignKey(
                         name: "FK_AspNetUserLogins_AspNetUsers_UserId",
+                        column: x => x.UserId,
+                        principalTable: "AspNetUsers",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "AspNetUserPasskeys",
+                columns: table => new
+                {
+                    CredentialId = table.Column<byte[]>(type: "varbinary(1024)", maxLength: 1024, nullable: false),
+                    UserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Data = table.Column<string>(type: "nvarchar(max)", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_AspNetUserPasskeys", x => x.CredentialId);
+                    table.ForeignKey(
+                        name: "FK_AspNetUserPasskeys_AspNetUsers_UserId",
                         column: x => x.UserId,
                         principalTable: "AspNetUsers",
                         principalColumn: "Id",
@@ -170,8 +189,8 @@ namespace Splitly.Data.Migrations
                 columns: table => new
                 {
                     UserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    LoginProvider = table.Column<string>(type: "nvarchar(450)", nullable: false),
-                    Name = table.Column<string>(type: "nvarchar(450)", nullable: false),
+                    LoginProvider = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
+                    Name = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
                     Value = table.Column<string>(type: "nvarchar(max)", nullable: true)
                 },
                 constraints: table =>
@@ -300,7 +319,13 @@ namespace Splitly.Data.Migrations
                     BlobName = table.Column<string>(type: "nvarchar(300)", maxLength: 300, nullable: false),
                     ContentType = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
                     Status = table.Column<int>(type: "int", nullable: false),
-                    FailureReason = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    FailureReason = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
+                    Note = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
+                    Merchant = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: true),
+                    StatedTotal = table.Column<decimal>(type: "decimal(19,4)", precision: 19, scale: 4, nullable: true),
+                    Attempts = table.Column<int>(type: "int", nullable: false),
+                    ProcessingStartedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    ExpenseId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
                     Currency = table.Column<string>(type: "nchar(3)", fixedLength: true, maxLength: 3, nullable: false),
                     Tax = table.Column<decimal>(type: "decimal(19,4)", precision: 19, scale: 4, nullable: false),
                     Tip = table.Column<decimal>(type: "decimal(19,4)", precision: 19, scale: 4, nullable: false),
@@ -331,7 +356,10 @@ namespace Splitly.Data.Migrations
                     SplitType = table.Column<int>(type: "int", nullable: false),
                     CreatedBy = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     Recurrence = table.Column<int>(type: "int", nullable: false),
+                    StartDate = table.Column<DateOnly>(type: "date", nullable: false),
+                    OccurrenceCount = table.Column<int>(type: "int", nullable: false),
                     NextRunDate = table.Column<DateOnly>(type: "date", nullable: false),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: false),
                     EndDate = table.Column<DateOnly>(type: "date", nullable: true),
                     IsActive = table.Column<bool>(type: "bit", nullable: false)
                 },
@@ -448,6 +476,11 @@ namespace Splitly.Data.Migrations
                 column: "UserId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_AspNetUserPasskeys_UserId",
+                table: "AspNetUserPasskeys",
+                column: "UserId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_AspNetUserRoles_RoleId",
                 table: "AspNetUserRoles",
                 column: "RoleId");
@@ -468,6 +501,13 @@ namespace Splitly.Data.Migrations
                 name: "IX_Expenses_GroupId_Date",
                 table: "Expenses",
                 columns: new[] { "GroupId", "Date" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Expenses_RecurringExpenseId_Date",
+                table: "Expenses",
+                columns: new[] { "RecurringExpenseId", "Date" },
+                unique: true,
+                filter: "[RecurringExpenseId] IS NOT NULL");
 
             migrationBuilder.CreateIndex(
                 name: "IX_GroupInvites_GroupId",
@@ -527,6 +567,9 @@ namespace Splitly.Data.Migrations
 
             migrationBuilder.DropTable(
                 name: "AspNetUserLogins");
+
+            migrationBuilder.DropTable(
+                name: "AspNetUserPasskeys");
 
             migrationBuilder.DropTable(
                 name: "AspNetUserRoles");
