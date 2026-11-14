@@ -14,8 +14,8 @@ public sealed class AzureBlobReceiptStorage : IReceiptStorage
 {
     private readonly BlobContainerClient _container;
 
-    public AzureBlobReceiptStorage(string connectionString, string containerName = "receipts") =>
-        _container = new BlobServiceClient(connectionString).GetBlobContainerClient(containerName);
+    public AzureBlobReceiptStorage(BlobServiceClient service, string containerName = "receipts") =>
+        _container = service.GetBlobContainerClient(containerName);
 
     public async Task SaveAsync(string name, Stream content, string contentType, CancellationToken ct)
     {

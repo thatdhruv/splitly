@@ -19,6 +19,7 @@ public sealed class ExpenseService(AppDbContext db, IExchangeRateProvider rates)
     public async Task<ExpenseDto> CreateAsync(Guid groupId, Guid userId, ExpenseRequest req, CancellationToken ct,
         Receipt? receipt = null, RecurringExpense? recurring = null)
     {
+        using var activity = Telemetry.Source.StartActivity("expense.create");
         var expense = new Expense { GroupId = groupId, CreatedBy = userId };
         await ApplyAsync(expense, req, keepRate: false, ct);
         if (receipt is not null)
@@ -36,6 +37,11 @@ public sealed class ExpenseService(AppDbContext db, IExchangeRateProvider rates)
         }
         db.Expenses.Add(expense);
         await SaveOrConflictAsync(ct);
+        Telemetry.ExpensesCreated.Add(1,
+            new KeyValuePair<string, object?>("split_type", expense.SplitType.ToString()),
+            new KeyValuePair<string, object?>("origin", receipt is not null ? "receipt" : recurring is not null ? "recurring" : "manual"),
+            new KeyValuePair<string, object?>("foreign_currency", expense.ExchangeRate != 1m));
+        activity?.SetTag("splitly.currency", expense.Currency);
         return ToDto(expense);
     }
 

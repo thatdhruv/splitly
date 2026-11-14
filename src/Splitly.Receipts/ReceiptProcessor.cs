@@ -64,25 +64,34 @@ public sealed class ReceiptProcessor(
 
     private async Task ProcessAsync(Guid receiptId, CancellationToken ct)
     {
+        using var activity = Telemetry.Source.StartActivity("receipt.process");
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
         db.ChangeTracker.Clear();
         var receipt = await db.Receipts.Include(r => r.Items).FirstAsync(r => r.Id == receiptId, ct);
+        string outcome;
         try
         {
             await using var image = await storage.OpenAsync(receipt.BlobName, ct);
             var parsed = await parser.ParseAsync(image, receipt.ContentType, receipt.Currency, ct);
             Apply(receipt, parsed);
             await db.SaveChangesAsync(ct);
+            outcome = receipt.Status == ReceiptStatus.Ready ? "ready" : "needs_review";
             log.LogInformation("Receipt {Id} parsed: {Items} items, status {Status}", receipt.Id, receipt.Items.Count, receipt.Status);
         }
         catch (ReceiptParseException ex)
         {
+            outcome = "unreadable";
             await FailAsync(receipt, ex.Message, retry: false, ct); // retrying the same image won't help
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             log.LogWarning(ex, "Receipt {Id} attempt {Attempt} failed", receipt.Id, receipt.Attempts);
+            outcome = receipt.Attempts < options.MaxAttempts ? "retry" : "failed";
             await FailAsync(receipt, "Couldn't read this receipt right now.", retry: receipt.Attempts < options.MaxAttempts, ct);
         }
+        Telemetry.ReceiptsProcessed.Add(1, new KeyValuePair<string, object?>("outcome", outcome));
+        Telemetry.ReceiptParseSeconds.Record(System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalSeconds);
+        activity?.SetTag("splitly.receipt.outcome", outcome);
     }
 
     private async Task FailAsync(Receipt receipt, string reason, bool retry, CancellationToken ct)

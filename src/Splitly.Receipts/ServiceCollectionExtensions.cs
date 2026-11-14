@@ -1,29 +1,39 @@
+using Azure.Storage.Blobs;
 using Anthropic;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Splitly.Receipts;
 
 public static class ServiceCollectionExtensions
 {
     /// <summary>
-    /// Blob storage comes from <c>ConnectionStrings:receipts</c> (Azure Blob Storage/Azurite); without it, files go to
-    /// <c>Receipts:LocalPath</c>. The API only needs storage; the worker also needs a parser.
+    /// Blob storage comes from <c>ConnectionStrings:receipts</c> (Azure Blob Storage, or Azurite under Aspire), wired through the
+    /// Aspire client so it also gets health checks and tracing. Without it, files go to <c>Receipts:LocalPath</c>.
+    /// The API only needs storage; the worker also needs a parser.
     /// </summary>
-    public static IServiceCollection AddReceiptStorage(this IServiceCollection services, IConfiguration config)
+    public static IHostApplicationBuilder AddReceiptStorage(this IHostApplicationBuilder builder)
     {
-        var blobs = config.GetConnectionString("receipts");
-        if (!string.IsNullOrEmpty(blobs))
-            return services.AddSingleton<IReceiptStorage>(new AzureBlobReceiptStorage(blobs));
-
-        var root = config["Receipts:LocalPath"] ?? Path.Combine(Path.GetTempPath(), "splitly-receipts");
-        return services.AddSingleton<IReceiptStorage>(new LocalFileReceiptStorage(root));
+        if (!string.IsNullOrEmpty(builder.Configuration.GetConnectionString("receipts")))
+        {
+            builder.AddAzureBlobServiceClient("receipts");
+            builder.Services.AddSingleton<IReceiptStorage>(sp => new AzureBlobReceiptStorage(sp.GetRequiredService<BlobServiceClient>()));
+        }
+        else
+        {
+            var root = builder.Configuration["Receipts:LocalPath"] ?? Path.Combine(Path.GetTempPath(), "splitly-receipts");
+            builder.Services.AddSingleton<IReceiptStorage>(new LocalFileReceiptStorage(root));
+        }
+        return builder;
     }
 
     /// <summary><c>Receipts:Parser</c> = "claude" (default, needs ANTHROPIC_API_KEY) or "fake" (explicit opt-in for dev/tests).</summary>
-    public static IServiceCollection AddReceiptProcessing(this IServiceCollection services, IConfiguration config)
+    public static IHostApplicationBuilder AddReceiptProcessing(this IHostApplicationBuilder builder)
     {
-        services.AddReceiptStorage(config);
+        var config = builder.Configuration;
+        var services = builder.Services;
+        builder.AddReceiptStorage();
         services.AddSingleton(config.GetSection("Receipts:Processing").Get<ReceiptProcessingOptions>() ?? new());
         services.AddSingleton(TimeProvider.System);
 
@@ -43,6 +53,7 @@ public static class ServiceCollectionExtensions
                 throw new InvalidOperationException($"Unknown Receipts:Parser '{parser}'. Use 'claude' or 'fake'.");
         }
 
-        return services.AddScoped<ReceiptProcessor>();
+        services.AddScoped<ReceiptProcessor>();
+        return builder;
     }
 }

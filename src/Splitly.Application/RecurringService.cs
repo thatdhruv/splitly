@@ -64,12 +64,15 @@ public sealed class RecurringProcessor(AppDbContext db, ExpenseService expenses,
     /// <returns>How many expenses were created.</returns>
     public async Task<int> ProcessDueAsync(CancellationToken ct)
     {
+        using var activity = Telemetry.Source.StartActivity("recurring.process");
         var today = DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
         var due = await db.RecurringExpenses.AsNoTracking().Where(r => r.IsActive && r.NextRunDate <= today)
             .OrderBy(r => r.NextRunDate).Select(r => r.Id).Take(100).ToListAsync(ct);
 
         var created = 0;
         foreach (var id in due) created += await ProcessOneAsync(id, today, ct);
+        if (created > 0) Telemetry.RecurringGenerated.Add(created);
+        activity?.SetTag("splitly.recurring.created", created);
         return created;
     }
 
