@@ -147,7 +147,110 @@ public class SplitFlowTests(StackFixture stack)
         await Expect(page.Locator("#recurring")).ToHaveCountAsync(0);
     }
 
+    [Fact]
+    public async Task Passkey_sign_up_sign_out_sign_in_and_manage()
+    {
+        await using var ctx = await stack.Browser.NewContextAsync();
+        var page = await ctx.NewPageAsync();
+        var device = await AddVirtualAuthenticatorAsync(ctx, page);
+
+        // Sign up with no password at all.
+        await Goto(page, stack.WebUrl + "/login");
+        await page.Locator("#to-signup").ClickAsync();
+        await Fill(page, "#displayName", "Passkey Pat");
+        await Fill(page, "#email", $"pat-{Guid.NewGuid():N}@example.com");
+        await page.Locator("#passkey-signup").ClickAsync();
+        await ExpectWithContext(page, page.Locator("#group-name"), "after passkey sign-up");
+        await ExpectWithContext(page, page.Locator("#account-link"), "header after passkey sign-up", "Passkey Pat");
+
+        // Sign out, then back in using only the passkey (no email typed).
+        await page.Locator("#logout").ClickAsync();
+        await Goto(page, stack.WebUrl + "/login");
+        await page.Locator("#passkey-signin").ClickAsync();
+        await ExpectWithContext(page, page.Locator("#group-name"), "after passkey sign-in");
+        await ExpectWithContext(page, page.Locator("#account-link"), "header after passkey sign-in", "Passkey Pat");
+
+        // Manage passkeys: add a second one, and the last remaining one can't be removed.
+        await page.Locator("#account-link").ClickAsync();
+        await Expect(page.Locator("#passkeys li")).ToHaveCountAsync(1);
+        // A second passkey comes from a different device: an authenticator refuses to enrol the same account twice.
+        await device.ReplaceWithNewDeviceAsync();
+        await Fill(page, "#passkey-name", "Work laptop");
+        await page.Locator("#add-passkey").ClickAsync();
+        await Expect(page.Locator("#passkeys li")).ToHaveCountAsync(2);
+        await Expect(page.Locator("#passkeys")).ToContainTextAsync("Work laptop");
+
+        await page.Locator("#passkeys li").First.GetByRole(AriaRole.Button, new() { Name = "Remove" }).ClickAsync();
+        await Expect(page.Locator("#passkeys li")).ToHaveCountAsync(1);
+        await page.Locator("#passkeys li").First.GetByRole(AriaRole.Button, new() { Name = "Remove" }).ClickAsync();
+        await Expect(page.Locator("[role=alert]")).ToContainTextAsync("only way to sign in");
+        await Expect(page.Locator("#passkeys li")).ToHaveCountAsync(1);
+    }
+
+    [Fact]
+    public async Task Passkey_sign_in_is_refused_for_an_unknown_credential()
+    {
+        // A fresh authenticator has no credential for this site, so there's nothing to sign in with.
+        await using var ctx = await stack.Browser.NewContextAsync();
+        var page = await ctx.NewPageAsync();
+        await AddVirtualAuthenticatorAsync(ctx, page);
+        await Goto(page, stack.WebUrl + "/login");
+        await page.Locator("#passkey-signin").ClickAsync();
+        await Expect(page.Locator("[role=alert]")).ToBeVisibleAsync();
+        await Expect(page).ToHaveURLAsync(new System.Text.RegularExpressions.Regex("/login"));
+    }
+
     // ---- helpers ----
+
+    /// <summary>Asserts, and on failure reports what the page actually showed (a bare timeout says nothing about why).</summary>
+    private static async Task ExpectWithContext(IPage page, ILocator locator, string step, string? text = null)
+    {
+        try
+        {
+            if (text is null) await Expect(locator).ToBeVisibleAsync();
+            else await Expect(locator).ToHaveTextAsync(text);
+        }
+        catch (PlaywrightException ex)
+        {
+            var body = (await page.Locator("body").InnerTextAsync()).ReplaceLineEndings(" | ");
+            var reason = ex.Message.Split(Environment.NewLine)[0];
+            throw new Xunit.Sdk.XunitException($"{step}: {reason} -- url={page.Url} -- page: {body[..Math.Min(body.Length, 400)]}");
+        }
+    }
+
+    /// <summary>A software authenticator so WebAuthn works headless: stores discoverable credentials and auto-approves user verification.</summary>
+    private static async Task<VirtualDevice> AddVirtualAuthenticatorAsync(IBrowserContext ctx, IPage page)
+    {
+        var device = new VirtualDevice(await ctx.NewCDPSessionAsync(page));
+        await device.Cdp.SendAsync("WebAuthn.enable");
+        await device.AddAsync();
+        return device;
+    }
+
+    private sealed class VirtualDevice(ICDPSession cdp)
+    {
+        public ICDPSession Cdp { get; } = cdp;
+        private string? _id;
+
+        public async Task AddAsync()
+        {
+            var res = await Cdp.SendAsync("WebAuthn.addVirtualAuthenticator", new Dictionary<string, object>
+            {
+                ["options"] = new Dictionary<string, object>
+                {
+                    ["protocol"] = "ctap2", ["transport"] = "internal", ["hasResidentKey"] = true, ["hasUserVerification"] = true,
+                    ["isUserVerified"] = true, ["automaticPresenceSimulation"] = true,
+                },
+            });
+            _id = res!.Value.GetProperty("authenticatorId").GetString();
+        }
+
+        public async Task ReplaceWithNewDeviceAsync()
+        {
+            await Cdp.SendAsync("WebAuthn.removeVirtualAuthenticator", new Dictionary<string, object> { ["authenticatorId"] = _id! });
+            await AddAsync();
+        }
+    }
 
     private static readonly byte[] TinyPng = Convert.FromBase64String(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==");
@@ -165,7 +268,7 @@ public class SplitFlowTests(StackFixture stack)
         await Fill(page, "#displayName", name);
         await Fill(page, "#email", $"{name.ToLower()}-{Guid.NewGuid():N}@example.com");
         await Fill(page, "#password", Password);
-        await page.GetByRole(AriaRole.Button, new() { Name = "Sign up" }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Sign up", Exact = true }).ClickAsync();
     }
 
     /// <summary>Navigates and waits for the Blazor circuit, so clicks aren't lost to a not-yet-interactive page.</summary>

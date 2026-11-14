@@ -42,3 +42,7 @@ button:disabled { opacity: .6; cursor: default; }
 .status { font-weight: 600; }
 .receipt-img { max-width: 100%; border-radius: 8px; border: 1px solid var(--line); }
 input[type=file] { padding: .4rem; }
+.or { display: flex; align-items: center; gap: .75rem; color: var(--muted); font-size: .85rem; margin: 1rem 0 .75rem; }
+.or::before, .or::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+button.passkey { width: 100%; }
+a.who { text-decoration: none; }

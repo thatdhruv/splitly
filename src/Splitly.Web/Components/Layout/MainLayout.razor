@@ -1,4 +1,5 @@
 ﻿@inherits LayoutComponentBase
+@implements IDisposable
 @inject Splitly.Web.Services.ApiClient Api
 @inject NavigationManager Nav
 
@@ -6,7 +7,7 @@
     <a class="brand" href="/groups">Splitly</a>
     @if (Api.IsSignedIn)
     {
-        <span class="who">@Api.Me!.DisplayName</span>
+        <a class="who" href="/account" id="account-link">@Api.Me!.DisplayName</a>
         <button class="link" id="logout" @onclick="LogOut">Sign out</button>
     }
 </header>
@@ -22,6 +23,10 @@
 </div>
 
 @code {
+    protected override void OnInitialized() => Api.SessionChanged += OnSessionChanged;
+    private void OnSessionChanged() => _ = InvokeAsync(StateHasChanged);
+    public void Dispose() => Api.SessionChanged -= OnSessionChanged;
+
     private async Task LogOut()
     {
         await Api.LogoutAsync();

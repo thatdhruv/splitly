@@ -35,10 +35,14 @@ else
     worker.WithEnvironment("Receipts__Parser", "fake");
 }
 
-builder.AddProject<Projects.Splitly_Web>("web")
+var web = builder.AddProject<Projects.Splitly_Web>("web")
     .WithEnvironment("Api__BaseUrl", api.GetEndpoint("http"))
     .WithReference(api).WaitFor(api)
     .WithExternalHttpEndpoints()
     .WithHttpHealthCheck("/health");
+
+// Passkeys (WebAuthn) are bound to the website the browser sees, which is the web app, not the API.
+api.WithEnvironment("Passkeys__RelyingPartyId", builder.Configuration["Passkeys:RelyingPartyId"] ?? "localhost")
+   .WithEnvironment("Passkeys__AllowedOrigins__0", web.GetEndpoint("http"));
 
 builder.Build().Run();

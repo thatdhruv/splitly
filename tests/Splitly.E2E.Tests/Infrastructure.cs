@@ -27,7 +27,7 @@ public sealed class StackFixture : IAsyncLifetime
         var apiPort = FreePort();
         var webPort = FreePort();
         var apiUrl = $"http://127.0.0.1:{apiPort}";
-        WebUrl = $"http://127.0.0.1:{webPort}";
+        WebUrl = $"http://localhost:{webPort}"; // WebAuthn needs a real host name or localhost, not an IP
 
         // The API (stores uploads) and the worker (reads them) must share a blob location; "fake" parser = no API key needed.
         _blobDir = Path.Combine(Path.GetTempPath(), "splitly-e2e-" + Guid.NewGuid().ToString("N"));
@@ -36,6 +36,8 @@ public sealed class StackFixture : IAsyncLifetime
             ["ConnectionStrings__splitly"] = _sql.GetConnectionString(),
             ["Database__MigrateOnStartup"] = "true",
             ["Receipts__LocalPath"] = _blobDir,
+            ["Passkeys__RelyingPartyId"] = "localhost",
+            ["Passkeys__AllowedOrigins__0"] = WebUrl,
         });
         Start(root, "src/Splitly.Web", WebUrl, new() { ["Api__BaseUrl"] = apiUrl });
         await WaitForAsync($"{apiUrl}/health"); // the API applies migrations on start, so the worker waits for it

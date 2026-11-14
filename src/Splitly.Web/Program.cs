@@ -9,7 +9,12 @@ builder.Services.AddRazorComponents()
 
 // The API base URL comes from config (Aspire injects it in local/dev and Container Apps).
 var apiBase = builder.Configuration["Api:BaseUrl"] ?? "http://localhost:5288";
-builder.Services.AddHttpClient<ApiClient>(c => c.BaseAddress = new Uri(apiBase.TrimEnd('/') + "/"));
+builder.Services.AddHttpClient("api", c => c.BaseAddress = new Uri(apiBase.TrimEnd('/') + "/"));
+// One ApiClient per circuit (i.e. per signed-in browser tab), shared by the layout and every page. A typed client would be
+// transient: each component would get its own instance with its own session state.
+builder.Services.AddScoped(sp => new ApiClient(
+    sp.GetRequiredService<IHttpClientFactory>().CreateClient("api"),
+    sp.GetRequiredService<Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage.ProtectedSessionStorage>()));
 
 var app = builder.Build();
 

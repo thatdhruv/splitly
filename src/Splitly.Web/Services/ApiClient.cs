@@ -21,6 +21,9 @@ public sealed class ApiClient(HttpClient http, ProtectedSessionStorage storage)
     public Uri BaseAddress => http.BaseAddress!;
     public bool IsSignedIn => Me is not null;
 
+    /// <summary>Raised when the signed-in user changes, so layout elements (the header) can re-render.</summary>
+    public event Action? SessionChanged;
+
     /// <summary>Call from OnAfterRender (needs JS interop). Returns true if a stored session was still valid.</summary>
     public async Task<bool> RestoreAsync()
     {
@@ -51,6 +54,7 @@ public sealed class ApiClient(HttpClient http, ProtectedSessionStorage storage)
         Token = null; Me = null;
         http.DefaultRequestHeaders.Authorization = null;
         await storage.DeleteAsync(TokenKey);
+        SessionChanged?.Invoke();
     }
 
     private async Task<bool> TryUseTokenAsync(string token)
@@ -64,6 +68,7 @@ public sealed class ApiClient(HttpClient http, ProtectedSessionStorage storage)
         }
         Token = token;
         Me = await res.Content.ReadFromJsonAsync<ProfileDto>();
+        SessionChanged?.Invoke();
         return true;
     }
 
@@ -88,6 +93,63 @@ public sealed class ApiClient(HttpClient http, ProtectedSessionStorage storage)
     public Task<SettleUpDto> GetSettleUpAsync(Guid groupId) => GetAsync<SettleUpDto>($"groups/{groupId}/settle-up");
     public async Task RecordPaymentAsync(Guid groupId, TransferDto t) =>
         await EnsureOk(await http.PostAsJsonAsync($"groups/{groupId}/payments", new PaymentRequest(t.From, t.To, t.Amount)));
+
+    // ---- passkeys ----
+    // ASP.NET Core Identity keeps the in-flight WebAuthn challenge in a short-lived cookie. The browser talks to this server, not
+    // to the API, so the cookie is relayed by hand from the "options" response to the follow-up call. (The factory's HttpClient
+    // has cookies disabled, so nothing is ever shared between users.)
+    private string? _passkeyChallengeCookie;
+
+    public async Task<string> GetPasskeyRequestOptionsAsync() => await ChallengeAsync("auth/passkey/request-options");
+    public async Task<string> GetPasskeyCreationOptionsAsync() => await ChallengeAsync("auth/passkey/creation-options");
+
+    private async Task<string> ChallengeAsync(string url)
+    {
+        var res = await http.PostAsync(url, null);
+        await EnsureOk(res);
+        _passkeyChallengeCookie = res.Headers.TryGetValues("Set-Cookie", out var cookies)
+            ? string.Join("; ", cookies.Select(c => c.Split(';')[0]))
+            : null;
+        return await res.Content.ReadAsStringAsync();
+    }
+
+    private async Task<HttpResponseMessage> PostWithChallengeAsync(string url, object body)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = JsonContent.Create(body) };
+        if (_passkeyChallengeCookie is not null) req.Headers.Add("Cookie", _passkeyChallengeCookie);
+        _passkeyChallengeCookie = null; // a challenge is single-use
+        return await http.SendAsync(req);
+    }
+
+    public async Task PasskeyLoginAsync(string credentialJson)
+    {
+        var res = await PostWithChallengeAsync("auth/passkey/login", new PasskeyCredentialRequest(credentialJson));
+        if (res.StatusCode == HttpStatusCode.Unauthorized) throw new ApiException(res.StatusCode, "That passkey isn't recognised.");
+        await EnsureOk(res);
+        await StartSessionAsync(res);
+    }
+
+    /// <summary>Creates a password-less account and signs in; the caller then registers the first passkey.</summary>
+    public async Task PasskeySignUpAsync(string email, string displayName)
+    {
+        var res = await http.PostAsJsonAsync("auth/passkey/signup", new PasskeySignUpRequest(email, displayName));
+        await EnsureOk(res);
+        await StartSessionAsync(res);
+    }
+
+    public async Task RegisterPasskeyAsync(string credentialJson, string name) =>
+        await EnsureOk(await PostWithChallengeAsync("auth/passkey/register", new PasskeyCredentialRequest(credentialJson, name)));
+
+    public Task<List<PasskeyDto>> GetPasskeysAsync() => GetAsync<List<PasskeyDto>>("auth/passkey");
+    public async Task DeletePasskeyAsync(string id) =>
+        await EnsureOk(await http.DeleteAsync($"auth/passkey/{Uri.EscapeDataString(id.Replace('+', '-').Replace('/', '_'))}"));
+
+    private async Task StartSessionAsync(HttpResponseMessage tokenResponse)
+    {
+        var token = (await tokenResponse.Content.ReadFromJsonAsync<LoginResponse>())!.AccessToken;
+        if (!await TryUseTokenAsync(token)) throw new ApiException(HttpStatusCode.Unauthorized, "Could not start a session.");
+        await storage.SetAsync(TokenKey, token);
+    }
 
     // ---- recurring ----
     public Task<List<RecurringDto>> GetRecurringAsync(Guid groupId) => GetAsync<List<RecurringDto>>($"groups/{groupId}/recurring");

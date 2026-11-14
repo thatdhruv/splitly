@@ -1,0 +1,66 @@
+@page "/account"
+@inherits AuthedPage
+@inject IJSRuntime JS
+@using Splitly.Contracts
+
+<PageTitle>Account · Splitly</PageTitle>
+
+<h1>Account</h1>
+
+@if (!Ready)
+{
+    <p class="hint">Loading…</p>
+}
+else
+{
+    @if (Error is not null) { <p class="error" role="alert">@Error</p> }
+
+    <section class="card">
+        <h2>Passkeys</h2>
+        <p class="hint">Sign in with your fingerprint, face or device PIN instead of a password.</p>
+
+        @if (passkeys.Count == 0) { <p class="hint">No passkeys yet.</p> }
+        <ul class="list" id="passkeys">
+            @foreach (var p in passkeys)
+            {
+                <li class="row between">
+                    <span><strong>@p.Name</strong> <span class="hint">added @p.CreatedAt.LocalDateTime.ToString("d")</span></span>
+                    <button class="small" @onclick="() => Remove(p)">Remove</button>
+                </li>
+            }
+        </ul>
+
+        <label>Name this passkey <input id="passkey-name" @bind="name" placeholder="e.g. Work laptop" /></label>
+        <button class="primary" id="add-passkey" @onclick="Add">Add a passkey</button>
+    </section>
+}
+
+@code {
+    private List<PasskeyDto> passkeys = [];
+    private string name = "";
+
+    protected override async Task OnReadyAsync() => passkeys = await Api.GetPasskeysAsync();
+
+    private async Task Add()
+    {
+        try
+        {
+            await Guard(async () =>
+            {
+                if (!await JS.InvokeAsync<bool>("splitlyPasskey.supported"))
+                    throw new Splitly.Web.Services.ApiException(System.Net.HttpStatusCode.BadRequest, "This browser doesn't support passkeys.");
+                var credential = await JS.InvokeAsync<string>("splitlyPasskey.create", await Api.GetPasskeyCreationOptionsAsync());
+                await Api.RegisterPasskeyAsync(credential, string.IsNullOrWhiteSpace(name) ? "Passkey" : name);
+                name = "";
+                passkeys = await Api.GetPasskeysAsync();
+            });
+        }
+        catch (JSException) { Error = "The passkey prompt was cancelled or failed. You can try again."; }
+    }
+
+    private Task Remove(PasskeyDto p) => Guard(async () =>
+    {
+        await Api.DeletePasskeyAsync(p.Id);
+        passkeys = await Api.GetPasskeysAsync();
+    });
+}

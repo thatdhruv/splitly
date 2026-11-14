@@ -1,6 +1,7 @@
 @page "/login"
 @inject Splitly.Web.Services.ApiClient Api
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <PageTitle>Sign in · Splitly</PageTitle>
 
@@ -20,6 +21,17 @@
 
         <button class="primary" type="submit" disabled="@busy">@(signUp ? "Sign up" : "Sign in")</button>
     </EditForm>
+
+    <div class="or"><span>or</span></div>
+    @if (signUp)
+    {
+        <button class="passkey" id="passkey-signup" type="button" disabled="@busy" @onclick="SignUpWithPasskey">🔑 Sign up with a passkey instead</button>
+        <p class="hint">No password needed: your name and email above, then your device's fingerprint, face or PIN.</p>
+    }
+    else
+    {
+        <button class="passkey" id="passkey-signin" type="button" disabled="@busy" @onclick="SignInWithPasskey">🔑 Sign in with a passkey</button>
+    }
 
     <p class="hint">
         @if (signUp) { <text>Already have an account? </text><button class="link" @onclick="() => signUp = false">Sign in</button> }
@@ -41,14 +53,47 @@
         {
             if (signUp) await Api.SignUpAsync(form.Email, form.Password, form.DisplayName);
             else await Api.LoginAsync(form.Email, form.Password);
-            // Only follow same-site relative return URLs.
-            var target = ReturnUrl is { Length: > 0 } r && !r.Contains("://") && !r.StartsWith("//") ? "/" + r.TrimStart('/') : "/groups";
-            Nav.NavigateTo(target);
+            Nav.NavigateTo(SafeTarget());
         }
         catch (Splitly.Web.Services.ApiException ex) { error = ex.Message; }
         catch (HttpRequestException) { error = "Can't reach the server."; }
         finally { busy = false; }
     }
+
+    private Task SignInWithPasskey() => Run(async () =>
+    {
+        var credential = await JS.InvokeAsync<string>("splitlyPasskey.get", await Api.GetPasskeyRequestOptionsAsync());
+        await Api.PasskeyLoginAsync(credential);
+    });
+
+    private Task SignUpWithPasskey() => Run(async () =>
+    {
+        if (string.IsNullOrWhiteSpace(form.Email) || string.IsNullOrWhiteSpace(form.DisplayName))
+            throw new Splitly.Web.Services.ApiException(System.Net.HttpStatusCode.BadRequest, "Enter your name and email first.");
+        await Api.PasskeySignUpAsync(form.Email, form.DisplayName);
+        var credential = await JS.InvokeAsync<string>("splitlyPasskey.create", await Api.GetPasskeyCreationOptionsAsync());
+        await Api.RegisterPasskeyAsync(credential, "This device");
+    });
+
+    /// <summary>Shared tail for the passkey flows: errors become on-page messages; success follows the return URL.</summary>
+    private async Task Run(Func<Task> action)
+    {
+        busy = true; error = null;
+        try
+        {
+            if (!await JS.InvokeAsync<bool>("splitlyPasskey.supported"))
+                throw new Splitly.Web.Services.ApiException(System.Net.HttpStatusCode.BadRequest, "This browser doesn't support passkeys. Use your password instead.");
+            await action();
+            Nav.NavigateTo(SafeTarget());
+        }
+        catch (Splitly.Web.Services.ApiException ex) { error = ex.Message; }
+        catch (HttpRequestException) { error = "Can't reach the server."; }
+        catch (JSException) { error = "The passkey prompt was cancelled or failed. You can try again."; }
+        finally { busy = false; }
+    }
+
+    // Only follow same-site relative return URLs.
+    private string SafeTarget() => ReturnUrl is { Length: > 0 } r && !r.Contains("://") && !r.StartsWith("//") ? "/" + r.TrimStart('/') : "/groups";
 
     private sealed class AuthForm
     {
