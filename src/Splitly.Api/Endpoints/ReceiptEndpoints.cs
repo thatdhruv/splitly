@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Splitly.Api.Auth;
 using Splitly.Api.Hubs;
 using Splitly.Api.Services;
+using Splitly.Application;
 using Splitly.Contracts;
 using Splitly.Data;
 using Splitly.Domain;

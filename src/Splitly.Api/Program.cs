@@ -7,6 +7,7 @@ using Splitly.Api.Auth;
 using Splitly.Api.Endpoints;
 using Splitly.Api.Hubs;
 using Splitly.Api.Services;
+using Splitly.Application;
 using Splitly.Data;
 using Splitly.Domain;
 using Splitly.Receipts;

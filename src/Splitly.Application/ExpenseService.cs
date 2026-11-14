@@ -5,7 +5,7 @@ using Splitly.Domain;
 using Splitly.Domain.Money;
 using Splitly.Domain.Splitting;
 
-namespace Splitly.Api.Services;
+namespace Splitly.Application;
 
 public sealed class ConcurrencyConflictException(string message) : Exception(message);
 public sealed class NotFoundException(string message) : Exception(message);

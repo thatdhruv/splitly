@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Splitly.Api.Auth;
 using Splitly.Api.Services;
+using Splitly.Application;
 using Splitly.Data;
 
 namespace Splitly.Api.Hubs;

@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Time.Testing;
 using Splitly.Api.Services;
+using Splitly.Application;
 using Splitly.Receipts;
 using Splitly.Contracts;
 using Splitly.Domain.Splitting;

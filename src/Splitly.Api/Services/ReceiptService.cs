@@ -1,3 +1,4 @@
+using Splitly.Application;
 using Microsoft.EntityFrameworkCore;
 using Splitly.Contracts;
 using Splitly.Data;

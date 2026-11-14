@@ -1,9 +1,10 @@
+using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Splitly.Data;
 using Splitly.Domain;
 using Splitly.Domain.Money;
 
-namespace Splitly.Api.Services;
+namespace Splitly.Application;
 
 public interface IExchangeRateProvider
 {

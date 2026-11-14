@@ -13,5 +13,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Splitly.Receipts\Splitly.Receipts.csproj" />
+    <ProjectReference Include="..\Splitly.Application\Splitly.Application.csproj" />
   </ItemGroup>
 </Project>
