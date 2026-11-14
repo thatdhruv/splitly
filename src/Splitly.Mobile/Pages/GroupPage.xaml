@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage x:Class="Splitly.Mobile.Pages.GroupPage"
+             xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:dto="clr-namespace:Splitly.Contracts;assembly=Splitly.Contracts">
+    <RefreshView x:Name="Refresh" Refreshing="OnRefresh">
+        <ScrollView>
+            <VerticalStackLayout Padding="16" Spacing="14">
+
+                <Button x:Name="ScanButton" Text="📷  Scan a receipt" FontSize="18" Padding="14" Clicked="OnScan" AutomationId="scan" />
+                <Button x:Name="PickButton" Text="Choose a photo instead" Clicked="OnPick" AutomationId="pick" />
+                <ActivityIndicator x:Name="Busy" IsRunning="False" IsVisible="False" />
+                <Label x:Name="StatusLabel" IsVisible="False" />
+
+                <Label Text="Balances" FontAttributes="Bold" FontSize="18" Margin="0,8,0,0" />
+                <VerticalStackLayout x:Name="BalancesPanel" Spacing="4" BindableLayout.ItemsSource="{Binding Balances}">
+                    <BindableLayout.ItemTemplate>
+                        <DataTemplate x:DataType="dto:BalanceDto">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <Label Text="{Binding DisplayName}" />
+                                <Label Grid.Column="1" Text="{Binding Amount, StringFormat='{0:N2}'}" FontAttributes="Bold" />
+                            </Grid>
+                        </DataTemplate>
+                    </BindableLayout.ItemTemplate>
+                </VerticalStackLayout>
+
+                <Label Text="Receipts" FontAttributes="Bold" FontSize="18" Margin="0,8,0,0" />
+                <Label x:Name="NoReceipts" Text="No receipts yet. Scan one above." IsVisible="False"
+                       TextColor="{AppThemeBinding Light=#667085, Dark=#98A2B3}" />
+                <VerticalStackLayout x:Name="ReceiptsPanel" Spacing="0" AutomationId="receipts">
+                    <BindableLayout.ItemTemplate>
+                        <DataTemplate x:DataType="dto:ReceiptSummaryDto">
+                            <VerticalStackLayout Padding="0,10" Spacing="2">
+                                <VerticalStackLayout.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnReceiptTapped" />
+                                </VerticalStackLayout.GestureRecognizers>
+                                <Label Text="{Binding Merchant, FallbackValue='Receipt', TargetNullValue='Receipt'}" FontAttributes="Bold" />
+                                <Label FontSize="12" TextColor="{AppThemeBinding Light=#667085, Dark=#98A2B3}">
+                                    <Label.Text>
+                                        <MultiBinding StringFormat="{}{0} · {1} items">
+                                            <Binding Path="Status" />
+                                            <Binding Path="ItemCount" />
+                                        </MultiBinding>
+                                    </Label.Text>
+                                </Label>
+                            </VerticalStackLayout>
+                        </DataTemplate>
+                    </BindableLayout.ItemTemplate>
+                </VerticalStackLayout>
+            </VerticalStackLayout>
+        </ScrollView>
+    </RefreshView>
+</ContentPage>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage x:Class="Splitly.Mobile.Pages.LoginPage"
+             xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             Title="Sign in" Shell.NavBarIsVisible="False">
+    <ScrollView>
+        <VerticalStackLayout Padding="24" Spacing="14" VerticalOptions="Center">
+            <Label Text="Splitly" FontSize="32" FontAttributes="Bold" />
+            <Label Text="Scan receipts, claim your items, split the bill."
+                   TextColor="{AppThemeBinding Light=#667085, Dark=#98A2B3}" />
+
+            <Entry x:Name="ServerEntry" Placeholder="Server, e.g. https://splitly.example.com" Keyboard="Url" AutomationId="server" />
+            <Entry x:Name="EmailEntry" Placeholder="Email" Keyboard="Email" AutomationId="email" />
+            <Entry x:Name="PasswordEntry" Placeholder="Password" IsPassword="True" AutomationId="password" Completed="OnSignIn" />
+
+            <Label x:Name="ErrorLabel" TextColor="#B42318" IsVisible="False" AutomationId="error" />
+            <Button x:Name="SignInButton" Text="Sign in" Clicked="OnSignIn" AutomationId="signin" />
+            <ActivityIndicator x:Name="Busy" IsRunning="False" IsVisible="False" />
+            <Label Text="New here? Create your account on the website first, then sign in here."
+                   FontSize="12" TextColor="{AppThemeBinding Light=#667085, Dark=#98A2B3}" />
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

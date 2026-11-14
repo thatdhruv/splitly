@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage x:Class="Splitly.Mobile.Pages.GroupsPage"
+             xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:dto="clr-namespace:Splitly.Contracts;assembly=Splitly.Contracts"
+             Title="Your groups">
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="Sign out" Clicked="OnSignOut" />
+    </ContentPage.ToolbarItems>
+    <RefreshView x:Name="Refresh" Refreshing="OnRefresh">
+        <CollectionView x:Name="List" SelectionMode="Single" SelectionChanged="OnSelected" AutomationId="groups">
+            <CollectionView.EmptyView>
+                <Label Text="You are not in any groups yet. Create one on the website, or open an invite link a friend sent you."
+                       Margin="24" HorizontalTextAlignment="Center" />
+            </CollectionView.EmptyView>
+            <CollectionView.ItemTemplate>
+                <DataTemplate x:DataType="dto:GroupSummaryDto">
+                    <VerticalStackLayout Padding="16,12" Spacing="2">
+                        <Label Text="{Binding Name}" FontAttributes="Bold" FontSize="18" />
+                        <Label Text="{Binding BaseCurrency, StringFormat='Currency: {0}'}" FontSize="12"
+                               TextColor="{AppThemeBinding Light=#667085, Dark=#98A2B3}" />
+                    </VerticalStackLayout>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
+    </RefreshView>
+</ContentPage>
