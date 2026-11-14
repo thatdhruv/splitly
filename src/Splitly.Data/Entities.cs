@@ -134,8 +134,6 @@ public class ItemClaim
     public Guid UserId { get; set; }
 }
 
-public enum Recurrence { Daily = 0, Weekly = 1, Monthly = 2, Yearly = 3 }
-
 public class RecurringExpense
 {
     public Guid Id { get; set; } = Guid.CreateVersion7();
@@ -147,7 +145,11 @@ public class RecurringExpense
     public SplitType SplitType { get; set; }
     public Guid CreatedBy { get; set; }
     public Recurrence Recurrence { get; set; }
+    /// <summary>First occurrence. Later dates are always computed from this plus the occurrence count, so a Jan 31 monthly bill returns to the 31st after February instead of drifting to the 28th.</summary>
+    public DateOnly StartDate { get; set; }
+    public int OccurrenceCount { get; set; }
     public DateOnly NextRunDate { get; set; }
+    public byte[] RowVersion { get; set; } = [];
     public DateOnly? EndDate { get; set; }
     public bool IsActive { get; set; } = true;
     public List<RecurringShare> Shares { get; set; } = [];

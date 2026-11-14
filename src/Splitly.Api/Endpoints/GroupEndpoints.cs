@@ -50,6 +50,7 @@ public static class GroupEndpoints
 
         MapExpenses(g);
         g.MapReceipts();
+        MapRecurring(g);
     }
 
     private static async Task<IResult> SignUp(SignUpRequest req, UserManager<AppUser> users)
@@ -108,6 +109,22 @@ public static class GroupEndpoints
     private static async Task<IResult> ListPayments(Guid groupId, AppDbContext db, CancellationToken ct) =>
         Results.Ok(await db.Payments.AsNoTracking().Where(p => p.GroupId == groupId).OrderByDescending(p => p.CreatedAt)
             .Select(p => new PaymentDto(p.Id, p.FromUserId, p.ToUserId, p.Amount, p.CreatedAt)).ToListAsync(ct));
+
+    private static void MapRecurring(RouteGroupBuilder g)
+    {
+        var r = g.MapGroup("/recurring");
+        r.MapGet("/", async (Guid groupId, RecurringService svc, CancellationToken ct) => await svc.ListAsync(groupId, ct));
+        r.MapPost("/", async (Guid groupId, RecurringRequest req, HttpContext http, RecurringService svc, CancellationToken ct) =>
+        {
+            var dto = await svc.CreateAsync(groupId, http.User.GetUserId(), req, ct);
+            return Results.Created($"/groups/{groupId}/recurring/{dto.Id}", dto);
+        });
+        r.MapDelete("/{id:guid}", async (Guid groupId, Guid id, RecurringService svc, CancellationToken ct) =>
+        {
+            await svc.StopAsync(groupId, id, ct);
+            return Results.NoContent();
+        });
+    }
 
     private static void MapExpenses(RouteGroupBuilder g)
     {

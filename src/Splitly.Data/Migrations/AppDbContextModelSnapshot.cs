@@ -316,6 +316,10 @@ namespace Splitly.Data.Migrations
 
                     b.HasIndex("GroupId", "Date");
 
+                    b.HasIndex("RecurringExpenseId", "Date")
+                        .IsUnique()
+                        .HasFilter("[RecurringExpenseId] IS NOT NULL");
+
                     b.ToTable("Expenses");
                 });
 
@@ -610,14 +614,26 @@ namespace Splitly.Data.Migrations
                     b.Property<DateOnly>("NextRunDate")
                         .HasColumnType("date");
 
+                    b.Property<int>("OccurrenceCount")
+                        .HasColumnType("int");
+
                     b.Property<Guid>("PaidBy")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("Recurrence")
                         .HasColumnType("int");
 
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
                     b.Property<int>("SplitType")
                         .HasColumnType("int");
+
+                    b.Property<DateOnly>("StartDate")
+                        .HasColumnType("date");
 
                     b.HasKey("Id");
 

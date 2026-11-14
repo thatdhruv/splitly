@@ -14,7 +14,10 @@ public sealed class ExpenseService(AppDbContext db, IExchangeRateProvider rates)
 {
     /// <param name="receipt">When the expense comes from a receipt, it is marked finalized in the same SaveChanges,
     /// so the expense and the receipt state change together (or a concurrent finalize gets a 409).</param>
-    public async Task<ExpenseDto> CreateAsync(Guid groupId, Guid userId, ExpenseRequest req, CancellationToken ct, Receipt? receipt = null)
+    /// <param name="recurring">When the expense is an occurrence of a recurring expense, the schedule advances in the same
+    /// SaveChanges (guarded by the schedule's rowversion and a unique (schedule, date) index), so an occurrence is never created twice.</param>
+    public async Task<ExpenseDto> CreateAsync(Guid groupId, Guid userId, ExpenseRequest req, CancellationToken ct,
+        Receipt? receipt = null, RecurringExpense? recurring = null)
     {
         var expense = new Expense { GroupId = groupId, CreatedBy = userId };
         await ApplyAsync(expense, req, keepRate: false, ct);
@@ -23,6 +26,13 @@ public sealed class ExpenseService(AppDbContext db, IExchangeRateProvider rates)
             expense.ReceiptId = receipt.Id;
             receipt.Status = ReceiptStatus.Finalized;
             receipt.ExpenseId = expense.Id;
+        }
+        if (recurring is not null)
+        {
+            expense.RecurringExpenseId = recurring.Id;
+            recurring.OccurrenceCount++;
+            recurring.NextRunDate = Recurrences.OccurrenceDate(recurring.StartDate, recurring.Recurrence, recurring.OccurrenceCount);
+            if (recurring.EndDate is { } end && recurring.NextRunDate > end) recurring.IsActive = false;
         }
         db.Expenses.Add(expense);
         await SaveOrConflictAsync(ct);

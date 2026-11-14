@@ -67,6 +67,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.HasOne<Group>().WithMany().HasForeignKey(x => x.GroupId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.Shares).WithOne().HasForeignKey(s => s.ExpenseId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => new { x.GroupId, x.Date });
+            // Backstop for idempotency: a recurring expense can produce at most one expense per date, even if two workers race.
+            e.HasIndex(x => new { x.RecurringExpenseId, x.Date }).IsUnique().HasFilter("[RecurringExpenseId] IS NOT NULL");
             e.HasQueryFilter(x => !x.IsDeleted);
         });
 
@@ -115,6 +117,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.Property(x => x.Description).HasMaxLength(200).IsRequired();
             e.Property(x => x.Currency).HasMaxLength(3).IsFixedLength();
             e.Property(x => x.Amount).HasPrecision(19, 4);
+            e.Property(x => x.RowVersion).IsRowVersion();
             e.HasOne<Group>().WithMany().HasForeignKey(x => x.GroupId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.Shares).WithOne().HasForeignKey(s => s.RecurringExpenseId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => new { x.IsActive, x.NextRunDate });

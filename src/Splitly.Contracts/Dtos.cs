@@ -55,3 +55,12 @@ public record ItemRequest(string Description, decimal Price);
 public record ReceiptTotalsRequest(decimal Tax, decimal Tip, string? Currency = null);
 public record ClaimRequest(bool Claimed);
 public record FinalizeReceiptRequest(Guid PaidBy, DateOnly Date);
+
+// ---- recurring expenses ----
+public record RecurringRequest(
+    string Description, decimal Amount, string Currency, Guid PaidBy, SplitType SplitType,
+    IReadOnlyList<ParticipantInput> Participants, Recurrence Recurrence, DateOnly StartDate, DateOnly? EndDate = null);
+
+public record RecurringDto(
+    Guid Id, Guid GroupId, string Description, decimal Amount, string Currency, Guid PaidBy, SplitType SplitType,
+    IReadOnlyList<ParticipantInput> Participants, Recurrence Recurrence, DateOnly StartDate, DateOnly NextRunDate, DateOnly? EndDate, bool IsActive);

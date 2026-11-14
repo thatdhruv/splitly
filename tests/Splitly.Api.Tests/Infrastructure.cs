@@ -87,6 +87,7 @@ public sealed class ApiFactory(string connectionString) : WebApplicationFactory<
             s.AddSingleton<IReceiptParser>(Parser);
             s.AddSingleton(new ReceiptProcessingOptions());
             s.AddScoped<ReceiptProcessor>();
+            s.AddScoped<RecurringProcessor>();
             s.RemoveAll<IExchangeRateProvider>();
             s.AddSingleton<IExchangeRateProvider, FakeRates>();
             s.RemoveAll<TimeProvider>();
