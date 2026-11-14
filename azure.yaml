@@ -1,0 +1,10 @@
+# Azure Developer CLI (azd) project for deploying Splitly to Azure Container Apps.
+# The .NET Aspire AppHost is the source of truth: azd reads its app model and provisions the environment,
+# Azure SQL, Storage and the Container Apps for the API, worker and web front end.
+# See docs/DEPLOY.md.
+name: splitly
+services:
+  app:
+    language: dotnet
+    project: ./src/Splitly.AppHost/Splitly.AppHost.csproj
+    host: containerapp

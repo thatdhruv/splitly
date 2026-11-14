@@ -1,0 +1,51 @@
+name: Deploy to Azure
+
+# Manual by design: a deploy creates billable Azure resources and needs credentials, so it never runs on every push.
+# Run it from the Actions tab (or push a v* tag) after CI is green. One-time setup is in docs/DEPLOY.md.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: azd environment name (e.g. prod)
+        required: true
+        default: prod
+  push:
+    tags: ["v*"]
+
+permissions:
+  id-token: write   # OIDC login to Azure: no long-lived secret is stored in GitHub
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.event.inputs.environment || 'prod' }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'prod' }}   # protect with required reviewers in repo settings
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+      AZURE_ENV_NAME: ${{ github.event.inputs.environment || 'prod' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: Azure/setup-azd@v2
+
+      - name: Sign in to Azure (federated credentials)
+        run: |
+          azd auth login --client-id "$AZURE_CLIENT_ID" --federated-credential-provider "github" --tenant-id "$AZURE_TENANT_ID"
+
+      # The first deployment is run interactively from a developer machine (`azd up`, see docs/DEPLOY.md): azd prompts for the
+      # secret "anthropic-api-key" parameter and stores it in the azd environment. This workflow assumes that environment
+      # already exists, and covers repeat deployments. It has not been run against a real subscription yet.
+      - name: Provision infrastructure
+        run: azd provision --no-prompt
+
+      - name: Deploy services
+        run: azd deploy --no-prompt
