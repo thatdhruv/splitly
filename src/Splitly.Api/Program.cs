@@ -13,6 +13,7 @@ using Splitly.Domain;
 using Splitly.Receipts;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.AddServiceDefaults(); // OpenTelemetry, service discovery, resilient HttpClients
 
 builder.Services.AddDbContext<AppDbContext>(o =>
     o.UseSqlServer(builder.Configuration.GetConnectionString("splitly"), sql => sql.EnableRetryOnFailure()));
@@ -41,7 +42,7 @@ builder.Services.AddScoped<IAuthorizationHandler, GroupMemberHandler>();
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddHttpClient<IExchangeRateProvider, CachedExchangeRateProvider>(c => c.BaseAddress = new Uri("https://api.frankfurter.dev/"));
-builder.Services.AddReceiptStorage(builder.Configuration);
+builder.AddReceiptStorage();
 builder.Services.AddScoped<ExpenseService>();
 builder.Services.AddScoped<ReceiptService>();
 builder.Services.AddScoped<RecurringService>();

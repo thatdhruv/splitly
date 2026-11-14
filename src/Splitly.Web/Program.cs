@@ -2,6 +2,7 @@ using Splitly.Web.Components;
 using Splitly.Web.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.AddServiceDefaults(); // OpenTelemetry, service discovery, resilient HttpClients
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();

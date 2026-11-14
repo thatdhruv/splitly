@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Splitly.Contracts\Splitly.Contracts.csproj" />
+    <ProjectReference Include="..\Splitly.ServiceDefaults\Splitly.ServiceDefaults.csproj" />
   </ItemGroup>
 
   <ItemGroup>

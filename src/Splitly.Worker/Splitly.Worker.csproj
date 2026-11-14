@@ -14,5 +14,6 @@
   <ItemGroup>
     <ProjectReference Include="..\Splitly.Receipts\Splitly.Receipts.csproj" />
     <ProjectReference Include="..\Splitly.Application\Splitly.Application.csproj" />
+    <ProjectReference Include="..\Splitly.ServiceDefaults\Splitly.ServiceDefaults.csproj" />
   </ItemGroup>
 </Project>
