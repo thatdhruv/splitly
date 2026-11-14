@@ -44,6 +44,7 @@ public sealed class StackFixture : IAsyncLifetime
             ["ConnectionStrings__splitly"] = _sql.GetConnectionString(),
             ["Receipts__LocalPath"] = _blobDir,
             ["Receipts__Parser"] = "fake",
+            ["Recurring__IntervalSeconds"] = "2",
         });
         await WaitForAsync($"{WebUrl}/health");
 

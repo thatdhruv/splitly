@@ -88,6 +88,16 @@ else
                     </InputSelect>
                 </label>
 
+                <label>Repeats
+                    <InputSelect id="exp-repeat" @bind-Value="form.Repeat">
+                        <option value="">Never (one-off)</option>
+                        <option value="@Recurrence.Weekly">Every week</option>
+                        <option value="@Recurrence.Monthly">Every month</option>
+                        <option value="@Recurrence.Yearly">Every year</option>
+                        <option value="@Recurrence.Daily">Every day</option>
+                    </InputSelect>
+                </label>
+
                 <fieldset>
                     <legend>Between</legend>
                     @foreach (var m in group.Members)
@@ -107,6 +117,22 @@ else
             </EditForm>
         </section>
     </div>
+
+    @if (recurring.Count > 0)
+    {
+        <section class="card">
+            <h2>Recurring</h2>
+            <ul class="list" id="recurring">
+                @foreach (var r in recurring)
+                {
+                    <li class="row between">
+                        <span><strong>@r.Description</strong> <span class="hint">@r.Amount.ToString("N" + Digits(r.Currency)) @r.Currency · @r.Recurrence.ToString().ToLower() · next @r.NextRunDate</span></span>
+                        <button class="small" @onclick="() => StopRecurring(r)">Stop</button>
+                    </li>
+                }
+            </ul>
+        </section>
+    }
 
     <section class="card">
         <h2>Receipts</h2>
@@ -155,6 +181,7 @@ else
     private SettleUpDto? settle;
     private List<ExpenseDto> expenses = [];
     private List<ReceiptSummaryDto> receipts = [];
+    private List<RecurringDto> recurring = [];
     private ExpenseForm form = new();
     private string? inviteUrl;
     private bool live;
@@ -182,6 +209,7 @@ else
         settle = await Api.GetSettleUpAsync(GroupId);
         expenses = await Api.GetExpensesAsync(GroupId);
         receipts = await Api.GetReceiptsAsync(GroupId);
+        recurring = (await Api.GetRecurringAsync(GroupId)).Where(r => r.IsActive).ToList();
     }
 
     private async Task ConnectAsync()
@@ -220,9 +248,18 @@ else
     {
         var parts = form.Participants.Where(p => p.Value.Included)
             .Select(p => new ParticipantInput(p.Key, form.SplitType == SplitType.Equal ? null : p.Value.Value)).ToList();
-        await Api.AddExpenseAsync(GroupId, new ExpenseRequest(
-            form.Description, form.Amount, form.Currency, DateOnly.FromDateTime(form.Date), form.PaidBy, form.SplitType, parts));
-        form.Description = ""; form.Amount = 0;
+        if (form.Repeat is { Length: > 0 } repeat)
+        {
+            // A schedule, not a one-off: the background worker creates each occurrence when it falls due (within a minute for past dates).
+            await Api.CreateRecurringAsync(GroupId, new RecurringRequest(form.Description, form.Amount, form.Currency, form.PaidBy,
+                form.SplitType, parts, Enum.Parse<Recurrence>(repeat), DateOnly.FromDateTime(form.Date)));
+        }
+        else
+        {
+            await Api.AddExpenseAsync(GroupId, new ExpenseRequest(
+                form.Description, form.Amount, form.Currency, DateOnly.FromDateTime(form.Date), form.PaidBy, form.SplitType, parts));
+        }
+        form.Description = ""; form.Amount = 0; form.Repeat = "";
         foreach (var p in form.Participants.Values) p.Value = null;
         await Reload();
     });
@@ -235,6 +272,7 @@ else
         Nav.NavigateTo($"/groups/{GroupId}/receipts/{receipt.Id}");
     });
 
+    private Task StopRecurring(RecurringDto r) => Guard(async () => { await Api.StopRecurringAsync(GroupId, r.Id); await Reload(); });
     private Task Delete(ExpenseDto e) => Guard(async () => { await Api.DeleteExpenseAsync(GroupId, e); await Reload(); });
     private Task Pay(TransferDto t) => Guard(async () => { await Api.RecordPaymentAsync(GroupId, t); await Reload(); });
     private Task CreateInvite() => Guard(async () =>
@@ -259,6 +297,7 @@ else
         public DateTime Date { get; set; } = DateTime.Today;
         public Guid PaidBy { get; set; }
         public SplitType SplitType { get; set; }
+        public string Repeat { get; set; } = "";
         public Dictionary<Guid, Participant> Participants { get; } = [];
     }
 }

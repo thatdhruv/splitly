@@ -89,6 +89,11 @@ public sealed class ApiClient(HttpClient http, ProtectedSessionStorage storage)
     public async Task RecordPaymentAsync(Guid groupId, TransferDto t) =>
         await EnsureOk(await http.PostAsJsonAsync($"groups/{groupId}/payments", new PaymentRequest(t.From, t.To, t.Amount)));
 
+    // ---- recurring ----
+    public Task<List<RecurringDto>> GetRecurringAsync(Guid groupId) => GetAsync<List<RecurringDto>>($"groups/{groupId}/recurring");
+    public Task<RecurringDto> CreateRecurringAsync(Guid groupId, RecurringRequest req) => PostAsync<RecurringDto>($"groups/{groupId}/recurring", req);
+    public async Task StopRecurringAsync(Guid groupId, Guid id) => await EnsureOk(await http.DeleteAsync($"groups/{groupId}/recurring/{id}"));
+
     // ---- receipts ----
     public async Task<ReceiptDto> UploadReceiptAsync(Guid groupId, Stream file, string fileName, string contentType)
     {

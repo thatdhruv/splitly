@@ -114,6 +114,39 @@ public class SplitFlowTests(StackFixture stack)
         await Expect(page.Locator("#expenses")).ToContainTextAsync("33.05 USD");
     }
 
+    [Fact]
+    public async Task Recurring_expense_is_scheduled_and_the_worker_creates_the_first_occurrence()
+    {
+        await using var ctx = await stack.Browser.NewContextAsync();
+        var page = await ctx.NewPageAsync();
+
+        await SignUpAsync(page, "Alice", "/login");
+        await Fill(page, "#group-name", "Flat");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Create group" }).ClickAsync();
+        await Expect(page.Locator("h1")).ToHaveTextAsync("Flat");
+
+        await Fill(page, "#exp-desc", "Internet");
+        await Fill(page, "#exp-amount", "45");
+        await page.Locator("#exp-repeat").SelectOptionAsync("Monthly");
+        await page.Locator("#exp-submit").ClickAsync();
+
+        await Expect(page.Locator("#recurring")).ToContainTextAsync("Internet");
+        // Start date is today, so the (fast-ticking) worker creates the first occurrence; the page refreshes via reload.
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        while (!(await page.Locator("#expenses").InnerTextAsync()).Contains("Internet"))
+        {
+            Assert.True(DateTime.UtcNow < deadline, "The worker never created the first occurrence.");
+            await Task.Delay(1000);
+            await page.ReloadAsync();
+            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await Expect(page.Locator("h1")).ToHaveTextAsync("Flat");
+        }
+        await Expect(page.Locator("#expenses")).ToContainTextAsync("45.00 USD");
+
+        await page.GetByRole(AriaRole.Button, new() { Name = "Stop" }).ClickAsync();
+        await Expect(page.Locator("#recurring")).ToHaveCountAsync(0);
+    }
+
     // ---- helpers ----
 
     private static readonly byte[] TinyPng = Convert.FromBase64String(
